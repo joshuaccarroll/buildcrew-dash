@@ -94,14 +94,23 @@ class IndexScreen(Screen):
         if state:
             phase = state.phase
             task_name = state.task_name
-            task = (task_name[:40] + "…") if len(task_name) > 40 else task_name
-            age = int(time.time()) - state.timestamp
-            if age < 10:
-                health = "[green]●[/green]"
-            elif age <= 30:
-                health = "[yellow]●[/yellow]"
+            words = task_name.split()
+            first_words = " ".join(words[:4])
+            task = f"Task {state.task_num}/{state.total_tasks}: {first_words}..."
+            if state.phase_status == "awaiting_input":
+                health = "[yellow]⏸[/yellow]"
+            elif state.phase_status == "permission_denied":
+                health = "[yellow]⚠[/yellow]"
+            elif state.phase_status == "max_turns":
+                health = "[red]⚠[/red]"
             else:
-                health = "[red]●[/red]"
+                age = int(time.time()) - state.timestamp
+                if age < 10:
+                    health = "[green]●[/green]"
+                elif age <= 30:
+                    health = "[yellow]●[/yellow]"
+                else:
+                    health = "[red]●[/red]"
             if state.phase == "discovery":
                 budget = "—"
             else:

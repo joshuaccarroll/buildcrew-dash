@@ -294,7 +294,7 @@ def test_hp20_index_screen_on_mount_is_async():
 
 
 def test_err01_task_gt_40_chars_truncated():
-    """ERR-01: task_name longer than 40 chars is truncated to 40 + '…'."""
+    """ERR-01: task_name with a single long token uses word-based label format."""
     screen = IndexScreen()
     inst = _make_instance()
     state = _make_state(task_name="a" * 41)
@@ -304,12 +304,11 @@ def test_err01_task_gt_40_chars_truncated():
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
         _, _, task, _, _, _ = screen._compute_cells(inst)
 
-    assert task == "a" * 40 + "…"
-    assert len(task) == 41
+    assert task == "Task 1/3: " + "a" * 41 + "..."
 
 
 def test_err02_task_exactly_40_chars_no_truncation():
-    """ERR-02: task_name of exactly 40 chars is returned unchanged."""
+    """ERR-02: task_name of exactly 40 chars uses word-based label format."""
     screen = IndexScreen()
     inst = _make_instance()
     state = _make_state(task_name="a" * 40)
@@ -319,8 +318,7 @@ def test_err02_task_exactly_40_chars_no_truncation():
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
         _, _, task, _, _, _ = screen._compute_cells(inst)
 
-    assert task == "a" * 40
-    assert "…" not in task
+    assert task == "Task 1/3: " + "a" * 40 + "..."
 
 
 def test_err03_compute_cells_propagates_log_parser_error():
@@ -411,7 +409,7 @@ def test_edge01_budget_complete_status_no_increment():
 
 
 def test_edge02_task_empty_string():
-    """EDGE-02: Empty task_name produces empty string cell, no truncation."""
+    """EDGE-02: Empty task_name produces 'Task N/M: ...' with no content between ': ' and '...'."""
     screen = IndexScreen()
     inst = _make_instance()
     state = _make_state(task_name="")
@@ -421,8 +419,7 @@ def test_edge02_task_empty_string():
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
         _, _, task, _, _, _ = screen._compute_cells(inst)
 
-    assert task == ""
-    assert "…" not in task
+    assert task == "Task 1/3: ..."
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -676,4 +673,148 @@ def test_discovery_mode_budget_dash():
         project, phase, task, duration, health, budget = screen._compute_cells(inst)
     assert budget == "—"
     assert phase == "discovery"
-    assert task == "implement auth"
+    assert task == "Task 1/3: implement auth..."
+
+
+# ---------------------------------------------------------------------------
+# AC-06: Task label format tests
+# ---------------------------------------------------------------------------
+
+
+def test_ac06_label_4_tokens_exact_fit():
+    """AC-06: 4-token task_name uses all 4 words — no truncation."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(task_num=2, total_tasks=5, task_name="implement auth flow now")
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, task, _, _, _ = screen._compute_cells(inst)
+    assert task == "Task 2/5: implement auth flow now..."
+
+
+def test_ac06_label_5_tokens_truncated_at_4():
+    """AC-06: 5-token task_name drops the 5th word — words[:4] truncation fires."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(task_num=2, total_tasks=5, task_name="implement auth flow now extra")
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, task, _, _, _ = screen._compute_cells(inst)
+    assert task == "Task 2/5: implement auth flow now..."
+
+
+def test_ac06_label_1_token():
+    """AC-06: 1-token task_name produces single-word label."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(task_num=2, total_tasks=5, task_name="short")
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, task, _, _, _ = screen._compute_cells(inst)
+    assert task == "Task 2/5: short..."
+
+
+def test_ac06_label_0_tokens():
+    """AC-06: Empty task_name produces 'Task N/M: ...' with no content between ': ' and '...'."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(task_num=2, total_tasks=5, task_name="")
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, task, _, _, _ = screen._compute_cells(inst)
+    assert task == "Task 2/5: ..."
+
+
+# ---------------------------------------------------------------------------
+# AC-01–AC-03: Health indicator tests
+# ---------------------------------------------------------------------------
+
+
+def test_hp_awaiting_input_health():
+    """Status awaiting_input overrides age-based logic: health is yellow pause."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase_status="awaiting_input", phase="build",
+                        invocation_count=4, max_invocations=15,
+                        timestamp=int(time.time()) - 60)
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, _, _, health, _ = screen._compute_cells(inst)
+    assert health == "[yellow]⏸[/yellow]"
+
+
+def test_hp_permission_denied_health():
+    """Status permission_denied overrides age-based logic: health is yellow warning."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase_status="permission_denied", phase="build",
+                        invocation_count=4, max_invocations=15,
+                        timestamp=int(time.time()) - 60)
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, _, _, health, _ = screen._compute_cells(inst)
+    assert health == "[yellow]⚠[/yellow]"
+
+
+def test_hp_max_turns_health():
+    """Status max_turns overrides age-based logic: health is red warning."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase_status="max_turns", phase="build",
+                        invocation_count=4, max_invocations=15,
+                        timestamp=int(time.time()) - 60)
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, _, _, health, _ = screen._compute_cells(inst)
+    assert health == "[red]⚠[/red]"
+
+
+# ---------------------------------------------------------------------------
+# AC-05: Budget raw count tests
+# ---------------------------------------------------------------------------
+
+
+def test_hp_awaiting_input_budget_raw():
+    """Status awaiting_input: budget uses raw invocation_count (no +1)."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase_status="awaiting_input", phase="build",
+                        invocation_count=4, max_invocations=15)
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, _, _, _, budget = screen._compute_cells(inst)
+    assert budget == "4/15"
+
+
+def test_hp_permission_denied_budget_raw():
+    """Status permission_denied: budget uses raw invocation_count (no +1)."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase_status="permission_denied", phase="build",
+                        invocation_count=4, max_invocations=15)
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, _, _, _, budget = screen._compute_cells(inst)
+    assert budget == "4/15"
+
+
+def test_hp_max_turns_budget_raw():
+    """Status max_turns: budget uses raw invocation_count (no +1)."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase_status="max_turns", phase="build",
+                        invocation_count=4, max_invocations=15)
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        _, _, _, _, _, budget = screen._compute_cells(inst)
+    assert budget == "4/15"
