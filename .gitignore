@@ -8,3 +8,4 @@ dist/
 smoke_test*.py
 verify_ac.py
 run_tests.sh
+.claude/
