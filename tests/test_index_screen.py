@@ -665,3 +665,15 @@ def test_smoke02_app_instantiation():
     """SMOKE-02: BuildCrewDashApp can be instantiated without error."""
     app = BuildCrewDashApp()
     assert app is not None
+
+
+def test_discovery_mode_budget_dash():
+    """Discovery mode: budget shows '—' and phase shows 'discovery'."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=_make_state(phase="discovery")), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=_make_log_summary()):
+        project, phase, task, duration, health, budget = screen._compute_cells(inst)
+    assert budget == "—"
+    assert phase == "discovery"
+    assert task == "implement auth"

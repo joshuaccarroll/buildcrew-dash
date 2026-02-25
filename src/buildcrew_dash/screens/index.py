@@ -102,7 +102,10 @@ class IndexScreen(Screen):
                 health = "[yellow]●[/yellow]"
             else:
                 health = "[red]●[/red]"
-            budget = f"{state.display_invocation_count}/{state.max_invocations}"
+            if state.phase == "discovery":
+                budget = "—"
+            else:
+                budget = f"{state.display_invocation_count}/{state.max_invocations}"
         else:
             phase = "—"
             task = "—"

@@ -79,6 +79,19 @@ class KanbanScreen(Screen):
             for widget in self.query(".task-card"):
                 await widget.remove()
 
+            if state is not None and state.phase == "discovery":
+                self.query_one("#kanban-area").display = False
+                self.query_one("#log-panel", Collapsible).collapsed = False
+                # NOTE: log write here is intentionally separate from the normal-path
+                # log write at the end of this method (which does not clear first).
+                log_widget = self.query_one("#log-widget", Log)
+                log_widget.clear()
+                for line in log_summary.recent_lines:
+                    log_widget.write_line(line)
+                return
+            else:
+                self.query_one("#kanban-area").display = True
+
             # Rule 2: completed tasks
             for task_name in log_summary.completed_tasks:
                 if state is None or task_name != state.task_name:

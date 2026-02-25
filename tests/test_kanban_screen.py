@@ -820,3 +820,22 @@ async def test_smoke02_kanban_screen_mounts_cleanly(tmp_path):
             assert screen.query_one("#log-widget", Log) is not None
             for col_id, _ in COLUMNS:
                 assert screen.query_one(f"#{col_id}") is not None
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_discovery_mode_kanban(tmp_path):
+    """Discovery mode: kanban area hidden, log panel expanded, no task cards."""
+    from textual.widgets import Collapsible  # noqa: PLC0415
+
+    inst = _make_instance(str(tmp_path))
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=_make_state(phase="discovery", task_num=0, total_tasks=0)),
+        patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            assert screen.query_one("#kanban-area").display is False
+            assert screen.query_one("#log-panel", Collapsible).collapsed is False
+            assert len(list(screen.query(".task-card"))) == 0
