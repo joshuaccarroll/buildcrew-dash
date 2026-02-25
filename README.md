@@ -39,3 +39,27 @@ Running `buildcrew-dash` auto-discovers any running `buildcrew` processes — no
 
 - macOS only — process discovery relies on `pgrep` and `lsof`, which are not available on Linux or Windows.
 - Only currently-running processes are shown — there is no history of completed or past runs.
+
+## Upgrade
+
+```bash
+buildcrew-dash update
+```
+
+Fallback (if the tool is broken):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joshuaccarroll/buildcrew-dash/main/install.sh | bash -s -- --upgrade
+```
+
+## Uninstall
+
+```bash
+buildcrew-dash uninstall
+```
+
+Fallback (if the tool is broken):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/joshuaccarroll/buildcrew-dash/main/uninstall.sh | bash
+```
