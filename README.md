@@ -12,6 +12,12 @@ Terminal dashboard for monitoring running [buildcrew](https://github.com/joshuac
 ## Install
 
 ```bash
+curl -fsSL https://raw.githubusercontent.com/joshuaccarroll/buildcrew-dash/main/install.sh | bash
+```
+
+### For development:
+
+```bash
 git clone https://github.com/joshuaccarroll/buildcrew-dash.git
 cd buildcrew-dash
 uv pip install -e .
