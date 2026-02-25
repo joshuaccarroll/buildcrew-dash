@@ -34,14 +34,16 @@ class KanbanScreen(Screen):
     ]
 
     CSS = (
-        "#kanban-area { layout: horizontal; overflow-x: auto; overflow-y: hidden; }\n"
+        "#kanban-area { layout: horizontal; overflow-x: auto; overflow-y: hidden; height: 1fr; min-height: 8; }\n"
         ".task-card { background: $panel; padding: 0 1; margin-bottom: 1; }\n"
         ".phase-card { color: $success; padding: 0 1; margin-bottom: 1; }\n"
         ".status-awaiting_input { color: $warning; }\n"
         ".status-permission_denied { color: $error; }\n"
         ".status-max_turns { color: $error; }\n"
         "#phase-strip { padding: 0 1; color: $text-muted; }\n"
-        "#task-header { padding: 0 1; text-style: bold; }"
+        "#task-header { padding: 0 1; text-style: bold; }\n"
+        "#log-panel { max-height: 24; }\n"
+        "#log-widget { height: 20; }"
     )
 
     def __init__(self, instance: BuildCrewInstance) -> None:
@@ -140,8 +142,7 @@ class KanbanScreen(Screen):
                 # log write at the end of this method (which does not clear first).
                 log_widget = self.query_one("#log-widget", Log)
                 log_widget.clear()
-                for line in log_summary.recent_lines:
-                    log_widget.write_line(line)
+                log_widget.write_lines(log_summary.recent_lines)
                 return
             else:
                 self.query_one("#kanban-area").display = True
@@ -204,8 +205,7 @@ class KanbanScreen(Screen):
             # Update log widget
             log_widget = self.query_one("#log-widget", Log)
             log_widget.clear()
-            for line in log_summary.recent_lines:
-                log_widget.write_line(line)
+            log_widget.write_lines(log_summary.recent_lines)
         except Exception as e:
             self.notify(str(e), severity="warning")
 
