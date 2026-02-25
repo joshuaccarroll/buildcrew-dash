@@ -1047,3 +1047,43 @@ def test_am_adv01_auto_mode_non_true_value_is_false(tmp_path):
         assert result.auto_mode is False, (
             f"Expected auto_mode=False for {non_true_value!r}, got {result.auto_mode}"
         )
+
+
+# ---------------------------------------------------------------------------
+# BR: Backlog Reader
+# ---------------------------------------------------------------------------
+
+
+def test_br_hp01_pending_tasks_returned_in_order(tmp_path):
+    """Happy path: pending tasks are returned in file order with tags stripped."""
+    from buildcrew_dash.backlog_reader import read_pending_tasks  # noqa: PLC0415
+
+    backlog = tmp_path / "BACKLOG.md"
+    backlog.write_text(
+        "# Tasks\n"
+        "- [ ] alpha\n"
+        "- [x] done task\n"
+        "- [ ] beta {simple}\n"
+        "- [!] blocked task\n"
+        "- [ ] gamma\n",
+        encoding="utf-8",
+    )
+    result = read_pending_tasks(tmp_path)
+    assert result == ["alpha", "beta", "gamma"]
+
+
+def test_br_err01_missing_backlog_returns_empty(tmp_path):
+    """Error path: missing BACKLOG.md returns [] without raising."""
+    from buildcrew_dash.backlog_reader import read_pending_tasks  # noqa: PLC0415
+
+    result = read_pending_tasks(tmp_path)
+    assert result == []
+
+
+def test_br_adv01_invalid_utf8_returns_empty(tmp_path):
+    """Adversarial: BACKLOG.md with invalid UTF-8 bytes returns [], no partial results."""
+    from buildcrew_dash.backlog_reader import read_pending_tasks  # noqa: PLC0415
+
+    (tmp_path / "BACKLOG.md").write_bytes(b"- [ ] valid task\n\xff\xfe- [ ] after bad bytes\n")
+    result = read_pending_tasks(tmp_path)
+    assert result == []
