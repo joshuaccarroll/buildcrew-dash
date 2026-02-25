@@ -52,6 +52,7 @@ def _make_state(**kwargs) -> WorkflowState:
         invocation_count=4,
         max_invocations=15,
         timestamp=int(time.time()) - 5,
+        auto_mode=False,
     )
     defaults.update(kwargs)
     return WorkflowState(**defaults)
@@ -995,3 +996,41 @@ async def test_verdict_card_deduplication(tmp_path):
             screen = pilot.app.screen
             await screen.refresh_data()
             assert len(list(screen.query(".phase-card"))) == 1
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_auto_badge_shows_when_auto_mode_true(tmp_path):
+    """AC-07: #auto-badge shows cyan AUTO when auto_mode=True."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(auto_mode=True)
+    log_summary = _make_log_summary()
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            await screen.refresh_data()
+            badge = screen.query_one("#auto-badge", Static)
+            assert str(badge.content) == "[bold cyan]AUTO[/bold cyan]"
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_auto_badge_hidden_when_auto_mode_false(tmp_path):
+    """AC-08: #auto-badge is empty when auto_mode=False."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(auto_mode=False)
+    log_summary = _make_log_summary()
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            await screen.refresh_data()
+            badge = screen.query_one("#auto-badge", Static)
+            assert str(badge.content) == ""

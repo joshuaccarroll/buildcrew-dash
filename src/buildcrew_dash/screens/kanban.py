@@ -40,6 +40,7 @@ class KanbanScreen(Screen):
         ".status-awaiting_input { color: $warning; }\n"
         ".status-permission_denied { color: $error; }\n"
         ".status-max_turns { color: $error; }\n"
+        "#auto-badge { padding: 0 1; }\n"
         "#phase-strip { padding: 0 1; color: $text-muted; }\n"
         "#task-header { padding: 0 1; text-style: bold; }\n"
         "#log-panel { max-height: 24; }\n"
@@ -55,6 +56,7 @@ class KanbanScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static("", id="task-header")
+        yield Static("", id="auto-badge")
         yield Static("", id="phase-strip")
         with ScrollableContainer(id="kanban-area"):
             for col_id, label in COLUMNS:
@@ -80,6 +82,7 @@ class KanbanScreen(Screen):
                 await self.query_one("#kanban-area").remove_children()
                 await self.query_one("#kanban-area").mount(Static("Process exited", id="exit-banner"))
                 self.query_one("#task-header", Static).update("")
+                self.query_one("#auto-badge", Static).update("")
                 self.query_one("#phase-strip", Static).update("")
                 self.set_timer(3.0, self.app.pop_screen)
                 return
@@ -99,6 +102,10 @@ class KanbanScreen(Screen):
             else:
                 header_text = ""
             self.query_one("#task-header", Static).update(header_text)
+
+            # Update auto badge
+            auto_text = "[bold cyan]AUTO[/bold cyan]" if (state is not None and state.auto_mode) else ""
+            self.query_one("#auto-badge", Static).update(auto_text)
 
             # Update phase strip
             parts = []
