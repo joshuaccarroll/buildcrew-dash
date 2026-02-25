@@ -1034,3 +1034,91 @@ async def test_auto_badge_hidden_when_auto_mode_false(tmp_path):
             await screen.refresh_data()
             badge = screen.query_one("#auto-badge", Static)
             assert str(badge.content) == ""
+
+
+# ---------------------------------------------------------------------------
+# AC-09, AC-10, AC-11: Subagent activity display
+# ---------------------------------------------------------------------------
+
+
+def _make_activity(**kwargs):
+    from buildcrew_dash.activity_reader import AgentActivity  # noqa: PLC0415
+    defaults = dict(
+        tool="Read",
+        tool_input="src/foo.py",
+        turn=5,
+        max_turns=50,
+        status="tool_use",
+        timestamp=int(time.time()),
+    )
+    defaults.update(kwargs)
+    return AgentActivity(**defaults)
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_ac09_running_label_with_fresh_activity(tmp_path):
+    """AC-09: Running card label includes Turn N/M and tool info when activity is fresh."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(task_num=1, phase="build", phase_status="running")
+    log_summary = _make_log_summary()
+    activity = _make_activity(tool="Read", tool_input="src/foo.py", turn=5, max_turns=50)
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.screens.kanban.activity_reader.read", return_value=activity),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            await screen.refresh_data()
+            cards = list(screen.query(".task-card"))
+            labels = [str(c.content) for c in cards]
+            assert any("Turn 5/50" in lbl for lbl in labels), f"Expected 'Turn 5/50' in labels: {labels}"
+            assert any("Read: src/foo.py" in lbl for lbl in labels), f"Expected 'Read: src/foo.py' in labels: {labels}"
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_ac10_running_label_with_no_activity(tmp_path):
+    """AC-10: Running card label is exactly 'Task N' (no suffix) when activity is None."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(task_num=1, phase="build", phase_status="running")
+    log_summary = _make_log_summary()
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.screens.kanban.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            await screen.refresh_data()
+            cards = list(screen.query(".task-card"))
+            labels = [str(c.content) for c in cards]
+            assert any(lbl == f"Task {state.task_num}" for lbl in labels), (
+                f"Expected exactly 'Task {state.task_num}' in labels: {labels}"
+            )
+            assert not any("Turn" in lbl for lbl in labels), f"Unexpected 'Turn' in labels: {labels}"
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_ac11_stale_activity_ignored(tmp_path):
+    """AC-11: Stale activity (timestamp 60s ago) is ignored — label has no Turn suffix."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(task_num=1, phase="build", phase_status="running")
+    log_summary = _make_log_summary()
+    stale_activity = _make_activity(timestamp=int(time.time()) - 60)
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.screens.kanban.activity_reader.read", return_value=stale_activity),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            await screen.refresh_data()
+            cards = list(screen.query(".task-card"))
+            labels = [str(c.content) for c in cards]
+            assert not any("Turn" in lbl for lbl in labels), f"Unexpected 'Turn' in labels with stale activity: {labels}"

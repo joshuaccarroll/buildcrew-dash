@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import time
+
 from textual.app import ComposeResult
 from textual.screen import Screen
 from textual.widgets import Collapsible, Footer, Header, Label, Log, Static
 from textual.containers import ScrollableContainer, Vertical
 
-from buildcrew_dash import log_parser, state_reader
+from buildcrew_dash import activity_reader, log_parser, state_reader
 from buildcrew_dash.scanner import BuildCrewInstance, ProcessMonitor, ProcessScanner
 
 
@@ -92,6 +94,8 @@ class KanbanScreen(Screen):
             except (KeyError, ValueError):
                 state = None
 
+            activity = activity_reader.read(self.instance.project_path / ".buildcrew" / ".agent-activity")
+
             log_summary = log_parser.parse(self.instance.log_path)
 
             # Update task header
@@ -173,6 +177,8 @@ class KanbanScreen(Screen):
                         label = f"Task {state.task_num}\n⚠ Max turns"
                     else:  # "running"
                         label = f"Task {state.task_num}"
+                        if activity is not None and int(time.time()) - activity.timestamp < 30:
+                            label += f"\nTurn {activity.turn}/{activity.max_turns} \u00b7 {activity.tool}: {activity.tool_input[:30]}"
                     await self.query_one(f"#col-{state.phase}").mount(
                         Static(label, classes=f"task-card status-{state.phase_status}")
                     )

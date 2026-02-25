@@ -851,3 +851,91 @@ def test_mode_dash_when_state_none():
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
         cells = screen._compute_cells(inst)
     assert cells[1] == "—"
+
+
+# ---------------------------------------------------------------------------
+# AC-07, AC-08: Subagent activity display in index Phase column
+# ---------------------------------------------------------------------------
+
+
+def _make_activity(**kwargs):
+    from buildcrew_dash.activity_reader import AgentActivity  # noqa: PLC0415
+    defaults = dict(
+        tool="Read",
+        tool_input="src/foo.py",
+        turn=5,
+        max_turns=50,
+        status="tool_use",
+        timestamp=int(time.time()),
+    )
+    defaults.update(kwargs)
+    return AgentActivity(**defaults)
+
+
+def test_ac07_phase_shows_turn_when_fresh_running():
+    """AC-07: Phase cell shows 'build T5/50' when activity is fresh, running, turn > 0."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase="build", phase_status="running")
+    log_summary = _make_log_summary()
+    activity = _make_activity(turn=5, max_turns=50)
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity):
+        cells = screen._compute_cells(inst)
+    assert cells[2] == "build T5/50"
+
+
+def test_ac07_no_suffix_when_turn_zero():
+    """AC-07: Phase cell shows plain 'build' when activity.turn == 0."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase="build", phase_status="running")
+    log_summary = _make_log_summary()
+    activity = _make_activity(turn=0)
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity):
+        cells = screen._compute_cells(inst)
+    assert cells[2] == "build"
+
+
+def test_ac08_phase_plain_when_activity_none():
+    """AC-08: Phase cell is plain 'build' when activity is None."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase="build", phase_status="running")
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None):
+        cells = screen._compute_cells(inst)
+    assert cells[2] == "build"
+
+
+def test_ac08_phase_plain_when_not_running():
+    """AC-08: Phase cell is plain 'build' when phase_status != 'running'."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase="build", phase_status="awaiting_input")
+    log_summary = _make_log_summary()
+    activity = _make_activity(turn=5, max_turns=50)
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity):
+        cells = screen._compute_cells(inst)
+    assert cells[2] == "build"
+
+
+def test_ac08_phase_plain_when_stale():
+    """AC-08: Phase cell is plain 'build' when activity timestamp is stale (60s ago)."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase="build", phase_status="running")
+    log_summary = _make_log_summary()
+    activity = _make_activity(turn=5, max_turns=50, timestamp=int(time.time()) - 60)
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity):
+        cells = screen._compute_cells(inst)
+    assert cells[2] == "build"

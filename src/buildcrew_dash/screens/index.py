@@ -7,7 +7,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Static
 
 from buildcrew_dash.scanner import ProcessMonitor, ProcessScanner
-from buildcrew_dash import log_parser, state_reader
+from buildcrew_dash import activity_reader, log_parser, state_reader
 
 
 class IndexScreen(Screen):
@@ -95,6 +95,11 @@ class IndexScreen(Screen):
         if state:
             mode = "auto" if state.auto_mode else "—"
             phase = state.phase
+            activity = activity_reader.read(instance.project_path / ".buildcrew" / ".agent-activity")
+            if (activity is not None and activity.turn > 0
+                    and int(time.time()) - activity.timestamp < 30
+                    and state.phase_status == "running"):
+                phase = f"{state.phase} T{activity.turn}/{activity.max_turns}"
             task_name = state.task_name
             words = task_name.split()
             first_words = " ".join(words[:4])
