@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+.eggs/
+*.egg-info/
+.pytest_cache/
+smoke_test*.py
+verify_ac.py
+run_tests.sh
