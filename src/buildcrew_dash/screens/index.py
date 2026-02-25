@@ -7,7 +7,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Static
 
 from buildcrew_dash.scanner import ProcessMonitor, ProcessScanner
-from buildcrew_dash import activity_reader, log_parser, state_reader
+from buildcrew_dash import activity_reader, backlog_reader, log_parser, state_reader
 
 
 class IndexScreen(Screen):
@@ -56,33 +56,39 @@ class IndexScreen(Screen):
                     pass
                 table.display = True
 
-                # Remove stale rows
-                known_str_keys = {str(p) for p in self._monitor._known.keys()}
-                stale = [k for k in table.rows.keys() if k.value not in known_str_keys]
-                for k in stale:
-                    table.remove_row(k)
-
-                # Add new rows
-                existing_keys = {k.value for k in table.rows.keys()}
+                # Build desired dict
+                desired: dict[str, tuple] = {}
                 for instance in self._monitor._known.values():
-                    row_key_str = str(instance.log_path)
-                    if row_key_str not in existing_keys:
-                        try:
-                            cells = self._compute_cells(instance)
-                            table.add_row(*cells, key=row_key_str)
-                        except Exception:
-                            continue
+                    try:
+                        active_key = f"{str(instance.log_path)}::active"
+                        desired[active_key] = self._compute_cells(instance)
+                        pending = backlog_reader.read_pending_tasks(instance.project_path)
+                        for n, task in enumerate(pending[1:]):
+                            queued_key = f"{str(instance.log_path)}::queued::{n}"
+                            desired[queued_key] = self._compute_queued_cells(instance, task)
+                    except Exception:
+                        prefix = f"{str(instance.log_path)}::"
+                        for k in list(desired.keys()):
+                            if k.startswith(prefix):
+                                del desired[k]
+                        continue
+
+                # Remove absent rows
+                for row_key in list(table.rows.keys()):
+                    if row_key.value not in desired:
+                        table.remove_row(row_key)
+
+                # Add missing rows
+                existing_keys = {rk.value for rk in table.rows.keys()}
+                for k, cells in desired.items():
+                    if k not in existing_keys:
+                        table.add_row(*cells, key=k)
 
                 # Update all rows
-                for row_key in list(table.rows.keys()):
-                    try:
-                        instance = self._monitor._known[Path(row_key.value)]
-                        cells = self._compute_cells(instance)
-                        col_keys = ["project", "mode", "phase", "task", "duration", "health", "budget"]
-                        for col_key, value in zip(col_keys, cells):
-                            table.update_cell(row_key, col_key, value)
-                    except Exception:
-                        continue
+                col_keys = ["project", "mode", "phase", "task", "duration", "health", "budget"]
+                for k, cells in desired.items():
+                    for col_key, value in zip(col_keys, cells):
+                        table.update_cell(k, col_key, value)
         except Exception as e:
             self.notify(str(e), severity="warning")
 
@@ -137,16 +143,33 @@ class IndexScreen(Screen):
 
         return (project, mode, phase, task, duration, health, budget)
 
+    def _compute_queued_cells(self, instance, task_name: str) -> tuple:
+        project = instance.project_path.name
+        mode = "[dim]—[/dim]"
+        phase = "[dim]queued[/dim]"
+        words = task_name.split()
+        if len(words) == 0:
+            task = "[dim]—[/dim]"
+        elif len(words) > 4:
+            task = f"[dim]{' '.join(words[:4])}...[/dim]"
+        else:
+            task = f"[dim]{task_name}[/dim]"
+        duration = "[dim]—[/dim]"
+        health = "[dim]○[/dim]"
+        budget = "[dim]—[/dim]"
+        return (project, mode, phase, task, duration, health, budget)
+
     def action_open(self) -> None:
         table = self.query_one(DataTable)
         if table.row_count == 0:
             return
         row_key: str = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
-        if Path(row_key) not in self._monitor._known:
+        log_path_str = row_key.split("::")[0]
+        if Path(log_path_str) not in self._monitor._known:
             self.notify("Instance no longer running")
             return
         from buildcrew_dash.screens.kanban import KanbanScreen  # noqa: PLC0415
-        self.app.push_screen(KanbanScreen(self._monitor._known[Path(row_key)]))
+        self.app.push_screen(KanbanScreen(self._monitor._known[Path(log_path_str)]))
 
     def action_quit(self) -> None:
         self.app.exit()

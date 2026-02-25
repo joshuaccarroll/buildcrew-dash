@@ -375,6 +375,7 @@ async def test_err05_action_open_pushes_kanban_screen(tmp_path):
     with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
          patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]), \
          patch.dict(sys.modules, {"buildcrew_dash.screens.kanban": mock_kanban_mod}):
         async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
             await pilot.pause()
@@ -475,7 +476,8 @@ async def test_edge06_refresh_data_uses_known_not_return_value(tmp_path):
 
     with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
          patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
-         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]):
         async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
             await pilot.pause()
             from textual.widgets import DataTable  # noqa: PLC0415
@@ -515,7 +517,8 @@ async def test_edge08_stale_rows_removed_when_instance_disappears(tmp_path):
 
     with patch("buildcrew_dash.scanner.ProcessScanner.scan", side_effect=_scan), \
          patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
-         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]):
         async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
             await pilot.pause()
             from textual.widgets import DataTable  # noqa: PLC0415
@@ -547,7 +550,8 @@ async def test_edge09_empty_to_populated_transition(tmp_path):
 
     with patch("buildcrew_dash.scanner.ProcessScanner.scan", side_effect=_scan), \
          patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
-         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]):
         async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
             await pilot.pause()
             from textual.widgets import DataTable, Static  # noqa: PLC0415
@@ -606,7 +610,8 @@ async def test_adv03_action_open_stale_row_notifies(tmp_path):
 
     with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
          patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
-         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]):
         async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
             await pilot.pause()
             # Manually remove the instance to simulate stale row
@@ -939,3 +944,147 @@ def test_ac08_phase_plain_when_stale():
          patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity):
         cells = screen._compute_cells(inst)
     assert cells[2] == "build"
+
+
+# ---------------------------------------------------------------------------
+# AC-07–AC-10: Queued row integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_queued_rows_appear(tmp_path):
+    """AC-07: One instance with 3 pending tasks shows 1 active + 2 queued rows."""
+    inst = BuildCrewInstance(
+        pid=12345,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "buildcrew-2024-01-01_00-00-00-12345.log",
+    )
+    state = _make_state(timestamp=int(time.time()) - 5)
+    log_summary = _make_log_summary()
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=["task-a", "task-b", "task-c"]):
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            from textual.widgets import DataTable  # noqa: PLC0415
+            table = pilot.app.screen.query_one(DataTable)
+            assert table.row_count == 3, f"Expected 3 rows, got {table.row_count}"
+            queued_key = f"{str(inst.log_path)}::queued::0"
+            assert table.get_cell(queued_key, "phase") == "[dim]queued[/dim]"
+            assert table.get_cell(queued_key, "task") == "[dim]task-b[/dim]"
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_action_open_queued_row(tmp_path):
+    """AC-08: action_open from a queued row opens kanban for the same running instance."""
+    inst = BuildCrewInstance(
+        pid=12345,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "buildcrew-2024-01-01_00-00-00-12345.log",
+    )
+    state = _make_state(timestamp=int(time.time()) - 5)
+    log_summary = _make_log_summary()
+
+    from textual.screen import Screen as TxtScreen  # noqa: PLC0415
+
+    class FakeKanbanScreen(TxtScreen):
+        def __init__(self, instance):
+            super().__init__()
+            self.kanban_instance = instance
+
+        def compose(self):
+            return
+            yield  # noqa: unreachable — makes this a generator
+
+    mock_kanban_mod = MagicMock()
+    mock_kanban_mod.KanbanScreen = FakeKanbanScreen
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=["task-a", "task-b"]), \
+         patch.dict(sys.modules, {"buildcrew_dash.screens.kanban": mock_kanban_mod}):
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            from textual.widgets import DataTable  # noqa: PLC0415
+            table = pilot.app.screen.query_one(DataTable)
+            assert table.row_count == 2, f"Expected 2 rows, got {table.row_count}"
+            table.move_cursor(row=1)
+            pilot.app.screen.action_open()
+            await pilot.pause()
+            assert isinstance(pilot.app.screen, FakeKanbanScreen), (
+                f"Expected FakeKanbanScreen, got {type(pilot.app.screen)}"
+            )
+            assert pilot.app.screen.kanban_instance is inst
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_no_queued_rows_when_empty_or_single(tmp_path):
+    """AC-09: No queued rows when read_pending_tasks returns [] or a single task."""
+    inst = BuildCrewInstance(
+        pid=12345,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "buildcrew-2024-01-01_00-00-00-12345.log",
+    )
+    state = _make_state(timestamp=int(time.time()) - 5)
+    log_summary = _make_log_summary()
+
+    # Sub-case (a): empty list
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]):
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            from textual.widgets import DataTable  # noqa: PLC0415
+            table = pilot.app.screen.query_one(DataTable)
+            assert table.row_count == 1, f"(a) Expected 1 row, got {table.row_count}"
+
+    # Sub-case (b): single task
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=["only-task"]):
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            from textual.widgets import DataTable  # noqa: PLC0415
+            table = pilot.app.screen.query_one(DataTable)
+            assert table.row_count == 1, f"(b) Expected 1 row, got {table.row_count}"
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_queued_rows_removed_on_next_poll(tmp_path):
+    """AC-10: Queued rows are removed when backlog shrinks between polls."""
+    inst = BuildCrewInstance(
+        pid=12345,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "buildcrew-2024-01-01_00-00-00-12345.log",
+    )
+    state = _make_state(timestamp=int(time.time()) - 5)
+    log_summary = _make_log_summary()
+
+    pending_results = iter([["task-a", "task-b"], ["task-b"]])
+
+    def _read_pending(_path):
+        return next(pending_results)
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", side_effect=_read_pending):
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            from textual.widgets import DataTable  # noqa: PLC0415
+            table = pilot.app.screen.query_one(DataTable)
+            assert table.row_count == 2, f"Expected 2 rows after first poll, got {table.row_count}"
+
+            await pilot.app.screen.refresh_data()
+            await pilot.pause()
+
+            assert table.row_count == 1, f"Expected 1 row after second poll, got {table.row_count}"
+            key_values = {rk.value for rk in table.rows.keys()}
+            assert not any("::queued::" in k for k in key_values), (
+                f"Queued keys still present: {key_values}"
+            )
