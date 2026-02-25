@@ -899,3 +899,91 @@ def test_readme_adv04_exactly_five_section_headers():
     assert len(h2_lines) == 5, (
         f"Expected exactly 5 ## headers, found {len(h2_lines)}: {h2_lines}"
     )
+
+
+# ---------------------------------------------------------------------------
+# CMD: Subcommand dispatch (Task: update + uninstall subcommands)
+# ---------------------------------------------------------------------------
+
+
+def test_cmd01_smoke01_import_no_tui_launch():
+    """SMOKE-01: Importing main with no-arg sys.argv does not launch TUI; prints 'ok'."""
+    result = run(
+        [PYTHON, "-c",
+         "import sys; sys.argv=['buildcrew-dash']; "
+         "from buildcrew_dash.__main__ import main; print('ok')"],
+        timeout=10,
+    )
+    assert result.returncode == 0, (
+        f"Expected exit 0, got {result.returncode}\nstderr: {result.stderr}"
+    )
+    assert "ok" in result.stdout
+    assert "ImportError" not in result.stderr
+
+
+def test_cmd02_smoke02_uninstall_arg_import_no_crash():
+    """SMOKE-02: 'uninstall' arg — abort path via empty stdin; exits 0 with 'Aborted.'."""
+    result = run(
+        [PYTHON, "-m", "buildcrew_dash", "uninstall"],
+        timeout=10,
+        input="",  # EOF immediately — triggers EOFError → abort path
+    )
+    assert result.returncode == 0, (
+        f"Expected exit 0, got {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+    )
+    assert "Aborted." in result.stdout
+
+
+def test_cmd03_smoke03_unknown_arg_exits_one():
+    """SMOKE-03: '--help' arg → exit 1, usage error on stdout."""
+    result = run([PYTHON, "-m", "buildcrew_dash", "--help"], timeout=10)
+    assert result.returncode == 1, (
+        f"Expected exit 1, got {result.returncode}\nstdout: {result.stdout}"
+    )
+    assert "Unknown command: --help" in result.stdout
+    assert "Usage: buildcrew-dash [update|uninstall]" in result.stdout
+
+
+def test_cmd04_unknown_arg_foo_exits_one():
+    """Adversarial: 'foo' arg → exit 1, 'Unknown command: foo' on stdout."""
+    result = run([PYTHON, "-m", "buildcrew_dash", "foo"], timeout=10)
+    assert result.returncode == 1
+    assert "Unknown command: foo" in result.stdout
+    assert "Usage: buildcrew-dash [update|uninstall]" in result.stdout
+
+
+def test_cmd05_uninstall_prints_removal_targets():
+    """Adversarial: 'uninstall' with abort response — removal targets printed to stdout."""
+    result = run(
+        [PYTHON, "-m", "buildcrew_dash", "uninstall"],
+        timeout=10,
+        input="n\n",
+    )
+    assert result.returncode == 0
+    assert "Will remove: ~/.buildcrew-dash/" in result.stdout
+    assert "Will remove: ~/.local/bin/buildcrew-dash" in result.stdout
+
+
+def test_cmd06_uninstall_n_response_aborts():
+    """Adversarial: 'uninstall' + 'n' → 'Aborted.' on stdout, exits 0."""
+    result = run(
+        [PYTHON, "-m", "buildcrew_dash", "uninstall"],
+        timeout=10,
+        input="n\n",
+    )
+    assert result.returncode == 0
+    assert "Aborted." in result.stdout
+
+
+def test_cmd07_unknown_arg_h_exits_one():
+    """Adversarial: '-h' arg (common help flag) → exit 1, usage message."""
+    result = run([PYTHON, "-m", "buildcrew_dash", "-h"], timeout=10)
+    assert result.returncode == 1
+    assert "Unknown command: -h" in result.stdout
+
+
+def test_cmd08_unknown_arg_help_exits_one():
+    """Adversarial: 'help' arg → exit 1, usage message."""
+    result = run([PYTHON, "-m", "buildcrew_dash", "help"], timeout=10)
+    assert result.returncode == 1
+    assert "Unknown command: help" in result.stdout
