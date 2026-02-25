@@ -17,6 +17,7 @@ from buildcrew_dash.scanner import BuildCrewInstance, ProcessMonitor, ProcessSca
 from buildcrew_dash.screens.kanban import COLUMNS, PHASE_COL_IDS, KanbanScreen
 from buildcrew_dash.state_reader import WorkflowState
 from textual.app import App
+from textual.widgets import Static
 
 
 # All async tests use Textual's run_test(), which requires asyncio.
@@ -166,7 +167,7 @@ def test_hp09_action_toggle_log_is_sync():
 @pytest.mark.anyio(backends=["asyncio"])
 async def test_hp10_compose_yields_all_required_widgets(tmp_path):
     """HP-10: compose() yields Header, ScrollableContainer#kanban-area, Collapsible#log-panel, Log#log-widget, Footer."""
-    from textual.widgets import Collapsible, Footer, Header, Log  # noqa: PLC0415
+    from textual.widgets import Collapsible, Footer, Header, Log, Static  # noqa: PLC0415
     from textual.containers import ScrollableContainer  # noqa: PLC0415
 
     inst = _make_instance(str(tmp_path))
@@ -184,6 +185,8 @@ async def test_hp10_compose_yields_all_required_widgets(tmp_path):
             assert screen.query_one("#log-widget", Log) is not None
             assert screen.query_one(Header) is not None
             assert screen.query_one(Footer) is not None
+            assert screen.query_one("#task-header", Static) is not None
+            assert screen.query_one("#phase-strip", Static) is not None
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -239,7 +242,7 @@ async def test_hp13_active_task_in_correct_phase_column(tmp_path):
             col = screen.query_one("#col-build")
             cards = list(col.query(".task-card"))
             assert len(cards) == 1
-            assert str(cards[0].content) == "implement auth"
+            assert str(cards[0].content) == "Task 1"
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -259,8 +262,8 @@ async def test_hp14_completed_tasks_in_col_complete(tmp_path):
             col = screen.query_one("#col-complete")
             cards = list(col.query(".task-card"))
             texts = [str(c.content) for c in cards]
-            assert "task A" in texts
-            assert "task B" in texts
+            assert "Task 1" in texts
+            assert "Task 2" in texts
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -281,7 +284,8 @@ async def test_hp15_current_task_excluded_from_col_complete(tmp_path):
             cards = list(col.query(".task-card"))
             texts = [str(c.content) for c in cards]
             assert "implement auth" not in texts
-            assert "previous task" in texts
+            assert "Task 1" in texts
+            assert len(texts) == 1
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -355,7 +359,7 @@ async def test_hp18_replanning_uses_last_non_skipped_phase(tmp_path):
             cards = list(col.query(".task-card"))
             assert len(cards) == 1
             card_text = str(cards[0].content)
-            assert "refactor login" in card_text
+            assert "Task 1" in card_text
             assert "Replanning..." in card_text
 
 
@@ -839,3 +843,155 @@ async def test_discovery_mode_kanban(tmp_path):
             assert screen.query_one("#kanban-area").display is False
             assert screen.query_one("#log-panel", Collapsible).collapsed is False
             assert len(list(screen.query(".task-card"))) == 0
+
+
+# ---------------------------------------------------------------------------
+# New tests: AC-10
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_awaiting_input_card(tmp_path):
+    """AC-10: awaiting_input phase_status → task card with ⏸ label and status-awaiting_input class."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(phase="build", phase_status="awaiting_input", task_num=1, total_tasks=1)
+    log_summary = _make_log_summary()
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            cards = list(screen.query_one("#col-build").query(".task-card"))
+            assert len(cards) == 1
+            assert "⏸ Awaiting input" in str(cards[0].content)
+            assert "status-awaiting_input" in cards[0].classes
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_permission_denied_card(tmp_path):
+    """AC-10: permission_denied phase_status → task card with ⚠ label and status-permission_denied class."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(phase="build", phase_status="permission_denied", task_num=1, total_tasks=1)
+    log_summary = _make_log_summary()
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            cards = list(screen.query_one("#col-build").query(".task-card"))
+            assert len(cards) == 1
+            assert "⚠ Needs permission" in str(cards[0].content)
+            assert "status-permission_denied" in cards[0].classes
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_max_turns_card(tmp_path):
+    """AC-10: max_turns phase_status → task card with ⚠ label and status-max_turns class."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(phase="build", phase_status="max_turns", task_num=1, total_tasks=1)
+    log_summary = _make_log_summary()
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            cards = list(screen.query_one("#col-build").query(".task-card"))
+            assert len(cards) == 1
+            assert "⚠ Max turns" in str(cards[0].content)
+            assert "status-max_turns" in cards[0].classes
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_phase_strip_content(tmp_path):
+    """AC-10: phase strip shows ✓ for complete, ● for active, ○ for pending; 7 → separators."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(phase="build", phase_status="running")
+    log_summary = _make_log_summary(phases=[
+        PhaseRecord(name="spec", status="complete"),
+        PhaseRecord(name="build", status="active"),
+    ])
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            strip = screen.query_one("#phase-strip", Static)
+            text = str(strip.content)
+            assert text.index("✓ spec") < text.index("● build")
+            assert text.index("● build") < text.index("○ test")
+            assert text.count(" → ") == 7
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_phase_strip_awaiting_input_symbol(tmp_path):
+    """AC-10: phase strip shows ⏸ for awaiting_input phase, not ●."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(phase="build", phase_status="awaiting_input")
+    log_summary = _make_log_summary(phases=[
+        PhaseRecord(name="spec", status="complete"),
+        PhaseRecord(name="build", status="active"),
+    ])
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            strip = screen.query_one("#phase-strip", Static)
+            text = str(strip.content)
+            assert "⏸" in text
+            assert "● build" not in text
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_phase_strip_failed_symbol(tmp_path):
+    """AC-10: phase strip shows ✗ for a failed phase."""
+    inst = _make_instance(str(tmp_path))
+    log_summary = _make_log_summary(phases=[
+        PhaseRecord(name="spec", status="failed"),
+    ])
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=None),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            strip = screen.query_one("#phase-strip", Static)
+            text = str(strip.content)
+            assert "✗ spec" in text
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_verdict_card_deduplication(tmp_path):
+    """AC-10: Calling refresh_data twice with same complete phase yields exactly 1 phase-card."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(phase="build", phase_status="complete", task_num=1, total_tasks=1)
+    log_summary = _make_log_summary(phases=[
+        PhaseRecord(name="build", status="complete", verdict="approved"),
+    ])
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            await screen.refresh_data()
+            assert len(list(screen.query(".phase-card"))) == 1
