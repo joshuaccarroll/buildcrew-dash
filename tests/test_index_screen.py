@@ -118,8 +118,8 @@ def test_hp07_on_mount_is_sync_and_calls_push_screen():
     assert '"index"' in source or "'index'" in source
 
 
-def test_hp08_compute_cells_returns_6_tuple_with_project_name():
-    """HP-08: _compute_cells returns (project, ...) where project = project_path.name."""
+def test_hp08_compute_cells_returns_7_tuple_with_project_name():
+    """HP-08: _compute_cells returns (project, mode, ...) where project = project_path.name."""
     screen = IndexScreen()
     inst = _make_instance("/home/user/myproject")
     state = _make_state()
@@ -130,8 +130,9 @@ def test_hp08_compute_cells_returns_6_tuple_with_project_name():
         cells = screen._compute_cells(inst)
 
     assert isinstance(cells, tuple)
-    assert len(cells) == 6
+    assert len(cells) == 7
     assert cells[0] == "myproject"
+    assert cells[1] == "—"
 
 
 def test_hp09_compute_cells_all_fields_populated():
@@ -143,7 +144,7 @@ def test_hp09_compute_cells_all_fields_populated():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        project, phase, task, duration, health, budget = screen._compute_cells(inst)
+        project, _, phase, task, duration, health, budget = screen._compute_cells(inst)
 
     assert project != "—"
     assert phase != "—"
@@ -161,7 +162,7 @@ def test_hp10_compute_cells_no_state_returns_dashes():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=None), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        project, phase, task, duration, health, budget = screen._compute_cells(inst)
+        project, _, phase, task, duration, health, budget = screen._compute_cells(inst)
 
     assert phase == "—"
     assert task == "—"
@@ -177,7 +178,7 @@ def test_hp11_health_green_when_age_lt_10():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _ = screen._compute_cells(inst)
 
     assert health == "[green]●[/green]"
 
@@ -191,7 +192,7 @@ def test_hp12_health_yellow_when_age_eq_10():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _ = screen._compute_cells(inst)
 
     assert health == "[yellow]●[/yellow]"
 
@@ -205,7 +206,7 @@ def test_hp13_health_yellow_when_age_eq_30():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _ = screen._compute_cells(inst)
 
     assert health == "[yellow]●[/yellow]"
 
@@ -219,7 +220,7 @@ def test_hp14_health_red_when_age_eq_31():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _ = screen._compute_cells(inst)
 
     assert health == "[red]●[/red]"
 
@@ -232,7 +233,7 @@ def test_hp15_health_red_when_state_is_none():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=None), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _ = screen._compute_cells(inst)
 
     assert health == "[red]●[/red]"
 
@@ -246,7 +247,7 @@ def test_hp16_budget_running_uses_display_count():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget = screen._compute_cells(inst)
 
     assert budget == "5/15"
 
@@ -260,7 +261,7 @@ def test_hp17_duration_format():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, duration, _, _ = screen._compute_cells(inst)
+        _, _, _, _, duration, _, _ = screen._compute_cells(inst)
 
     assert ":" in duration
     assert duration != "—"
@@ -275,7 +276,7 @@ def test_hp18_duration_dash_when_no_start_time():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, duration, _, _ = screen._compute_cells(inst)
+        _, _, _, _, duration, _, _ = screen._compute_cells(inst)
 
     assert duration == "—"
 
@@ -302,7 +303,7 @@ def test_err01_task_gt_40_chars_truncated():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _ = screen._compute_cells(inst)
 
     assert task == "Task 1/3: " + "a" * 41 + "..."
 
@@ -316,7 +317,7 @@ def test_err02_task_exactly_40_chars_no_truncation():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _ = screen._compute_cells(inst)
 
     assert task == "Task 1/3: " + "a" * 40 + "..."
 
@@ -403,7 +404,7 @@ def test_edge01_budget_complete_status_no_increment():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget = screen._compute_cells(inst)
 
     assert budget == "4/15"
 
@@ -417,21 +418,21 @@ def test_edge02_task_empty_string():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _ = screen._compute_cells(inst)
 
     assert task == "Task 1/3: ..."
 
 
 @pytest.mark.anyio(backends=["asyncio"])
 async def test_edge03_datatable_columns_after_mount():
-    """EDGE-03: DataTable has exactly 6 expected column keys after app startup."""
+    """EDGE-03: DataTable has exactly 7 expected column keys after app startup."""
     with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[]):
         async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
             await pilot.pause()
             from textual.widgets import DataTable  # noqa: PLC0415
             table = pilot.app.screen.query_one(DataTable)
             col_keys = {ck.value for ck in table.columns.keys()}
-            assert col_keys == {"project", "phase", "task", "duration", "health", "budget"}
+            assert col_keys == {"project", "mode", "phase", "task", "duration", "health", "budget"}
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -670,7 +671,7 @@ def test_discovery_mode_budget_dash():
     inst = _make_instance()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=_make_state(phase="discovery")), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=_make_log_summary()):
-        project, phase, task, duration, health, budget = screen._compute_cells(inst)
+        project, _, phase, task, duration, health, budget = screen._compute_cells(inst)
     assert budget == "—"
     assert phase == "discovery"
     assert task == "Task 1/3: implement auth..."
@@ -689,7 +690,7 @@ def test_ac06_label_4_tokens_exact_fit():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _ = screen._compute_cells(inst)
     assert task == "Task 2/5: implement auth flow now..."
 
 
@@ -701,7 +702,7 @@ def test_ac06_label_5_tokens_truncated_at_4():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _ = screen._compute_cells(inst)
     assert task == "Task 2/5: implement auth flow now..."
 
 
@@ -713,7 +714,7 @@ def test_ac06_label_1_token():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _ = screen._compute_cells(inst)
     assert task == "Task 2/5: short..."
 
 
@@ -725,7 +726,7 @@ def test_ac06_label_0_tokens():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _ = screen._compute_cells(inst)
     assert task == "Task 2/5: ..."
 
 
@@ -744,7 +745,7 @@ def test_hp_awaiting_input_health():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _ = screen._compute_cells(inst)
     assert health == "[yellow]⏸[/yellow]"
 
 
@@ -758,7 +759,7 @@ def test_hp_permission_denied_health():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _ = screen._compute_cells(inst)
     assert health == "[yellow]⚠[/yellow]"
 
 
@@ -772,7 +773,7 @@ def test_hp_max_turns_health():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _ = screen._compute_cells(inst)
     assert health == "[red]⚠[/red]"
 
 
@@ -790,7 +791,7 @@ def test_hp_awaiting_input_budget_raw():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget = screen._compute_cells(inst)
     assert budget == "4/15"
 
 
@@ -803,7 +804,7 @@ def test_hp_permission_denied_budget_raw():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget = screen._compute_cells(inst)
     assert budget == "4/15"
 
 
@@ -816,5 +817,37 @@ def test_hp_max_turns_budget_raw():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget = screen._compute_cells(inst)
     assert budget == "4/15"
+
+
+def test_mode_auto_when_auto_mode_true():
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(auto_mode=True)
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        cells = screen._compute_cells(inst)
+    assert cells[1] == "auto"
+
+
+def test_mode_dash_when_auto_mode_false():
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(auto_mode=False)
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        cells = screen._compute_cells(inst)
+    assert cells[1] == "—"
+
+
+def test_mode_dash_when_state_none():
+    screen = IndexScreen()
+    inst = _make_instance()
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=None), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        cells = screen._compute_cells(inst)
+    assert cells[1] == "—"

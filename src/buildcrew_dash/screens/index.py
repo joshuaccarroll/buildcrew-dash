@@ -27,6 +27,7 @@ class IndexScreen(Screen):
     async def on_mount(self) -> None:
         table = self.query_one(DataTable)
         table.add_column("Project", key="project")
+        table.add_column("Mode", key="mode")
         table.add_column("Phase", key="phase")
         table.add_column("Task", key="task")
         table.add_column("Duration", key="duration")
@@ -77,7 +78,7 @@ class IndexScreen(Screen):
                     try:
                         instance = self._monitor._known[Path(row_key.value)]
                         cells = self._compute_cells(instance)
-                        col_keys = ["project", "phase", "task", "duration", "health", "budget"]
+                        col_keys = ["project", "mode", "phase", "task", "duration", "health", "budget"]
                         for col_key, value in zip(col_keys, cells):
                             table.update_cell(row_key, col_key, value)
                     except Exception:
@@ -92,6 +93,7 @@ class IndexScreen(Screen):
         project = instance.project_path.name
 
         if state:
+            mode = "auto" if state.auto_mode else "—"
             phase = state.phase
             task_name = state.task_name
             words = task_name.split()
@@ -116,6 +118,7 @@ class IndexScreen(Screen):
             else:
                 budget = f"{state.display_invocation_count}/{state.max_invocations}"
         else:
+            mode = "—"
             phase = "—"
             task = "—"
             health = "[red]●[/red]"
@@ -127,7 +130,7 @@ class IndexScreen(Screen):
         else:
             duration = "—"
 
-        return (project, phase, task, duration, health, budget)
+        return (project, mode, phase, task, duration, health, budget)
 
     def action_open(self) -> None:
         table = self.query_one(DataTable)
