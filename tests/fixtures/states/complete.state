@@ -6,3 +6,4 @@ phase_status=complete
 invocation_count=5
 max_invocations=15
 timestamp=1705312800
+auto_mode=false

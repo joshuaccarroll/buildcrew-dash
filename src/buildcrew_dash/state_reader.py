@@ -12,6 +12,7 @@ class WorkflowState:
     invocation_count: int
     max_invocations: int
     timestamp: int
+    auto_mode: bool = False
 
     @property
     def display_invocation_count(self) -> int:
@@ -51,4 +52,5 @@ def read(path: str | Path) -> WorkflowState | None:
         invocation_count=int(data["invocation_count"]),
         max_invocations=int(data["max_invocations"]),
         timestamp=int(data["timestamp"]),
+        auto_mode=data.get("auto_mode", "false") == "true",
     )

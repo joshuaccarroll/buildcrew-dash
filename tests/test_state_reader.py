@@ -23,6 +23,7 @@ def test_running_state():
     assert result.max_invocations == 15
     assert result.timestamp == 1705312800
     assert result.display_invocation_count == 5
+    assert result.auto_mode is True
     # AC-05: confirm return type is WorkflowState dataclass
     assert isinstance(result, WorkflowState) is True
     # AC-06: read() accepts a plain str path
@@ -42,6 +43,24 @@ def test_complete_state():
     assert result.max_invocations == 15
     assert result.timestamp == 1705312800
     assert result.display_invocation_count == 5
+    assert result.auto_mode is False
+
+
+def test_missing_auto_mode_defaults_false(tmp_path):
+    state_file = tmp_path / "no_auto_mode.state"
+    state_file.write_text(
+        "task_num=1\n"
+        "total_tasks=3\n"
+        "task_name=implement the thing\n"
+        "phase=build\n"
+        "phase_status=running\n"
+        "invocation_count=4\n"
+        "max_invocations=15\n"
+        "timestamp=1705312800\n"
+    )
+    result = read(state_file)
+    assert result is not None
+    assert result.auto_mode is False
 
 
 def test_malformed_line(tmp_path):
