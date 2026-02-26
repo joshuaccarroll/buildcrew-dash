@@ -1087,3 +1087,234 @@ def test_br_adv01_invalid_utf8_returns_empty(tmp_path):
     (tmp_path / "BACKLOG.md").write_bytes(b"- [ ] valid task\n\xff\xfe- [ ] after bad bytes\n")
     result = read_pending_tasks(tmp_path)
     assert result == []
+
+
+# ---------------------------------------------------------------------------
+# SC: Stop control (stop_control.py)
+# ---------------------------------------------------------------------------
+
+
+def test_sc_hp01_stop_control_importable():
+    """User can import all three stop_control functions."""
+    from buildcrew_dash.stop_control import (  # noqa: PLC0415
+        cancel_stop,
+        is_stop_pending,
+        request_stop,
+    )
+    assert callable(is_stop_pending)
+    assert callable(request_stop)
+    assert callable(cancel_stop)
+
+
+def test_sc_hp02_round_trip(tmp_path):
+    """Happy path: request → pending → cancel → not pending."""
+    from buildcrew_dash.stop_control import cancel_stop, is_stop_pending, request_stop  # noqa: PLC0415
+
+    assert is_stop_pending(tmp_path) is False
+    request_stop(tmp_path)
+    assert is_stop_pending(tmp_path) is True
+    cancel_stop(tmp_path)
+    assert is_stop_pending(tmp_path) is False
+
+
+def test_sc_err01_cancel_on_missing_dir_no_raise(tmp_path):
+    """Error: cancel_stop silently succeeds when .buildcrew/ dir does not exist."""
+    from buildcrew_dash.stop_control import cancel_stop  # noqa: PLC0415
+
+    result = cancel_stop(tmp_path)
+    assert result is None
+
+
+def test_sc_adv01_double_cancel_idempotent(tmp_path):
+    """Adversarial: calling cancel_stop twice raises no exception."""
+    from buildcrew_dash.stop_control import cancel_stop, request_stop  # noqa: PLC0415
+
+    request_stop(tmp_path)
+    cancel_stop(tmp_path)
+    cancel_stop(tmp_path)  # second call — must not raise
+
+
+# ---------------------------------------------------------------------------
+# IS: IndexScreen stop/cancel integration
+# ---------------------------------------------------------------------------
+
+
+def test_is_hp01_s_binding_declared():
+    """User-visible: pressing 's' is declared as a binding with label Stop/Cancel."""
+    from buildcrew_dash.screens.index import IndexScreen  # noqa: PLC0415
+
+    binding_tuples = [tuple(b) if not isinstance(b, tuple) else b for b in IndexScreen.BINDINGS]
+    assert ("s", "toggle_stop", "Stop/Cancel") in binding_tuples
+
+
+def test_is_hp02_footer_in_compose_source():
+    """User-visible: compose() yields a Footer widget so keybindings appear in the UI."""
+    import inspect  # noqa: PLC0415
+
+    from buildcrew_dash.screens.index import IndexScreen  # noqa: PLC0415
+
+    source = inspect.getsource(IndexScreen.compose)
+    assert "Footer()" in source
+
+
+def test_is_hp03_compute_cells_status_empty_when_not_stopping(tmp_path):
+    """Happy path: status field is empty string when no stop is pending."""
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    from buildcrew_dash.scanner import BuildCrewInstance  # noqa: PLC0415
+    from buildcrew_dash.screens.index import IndexScreen  # noqa: PLC0415
+
+    screen = IndexScreen.__new__(IndexScreen)
+    instance = BuildCrewInstance(
+        pid=1,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "build.log",
+    )
+    with (
+        patch("buildcrew_dash.screens.index.state_reader.read", return_value=None),
+        patch("buildcrew_dash.screens.index.log_parser.parse", return_value=None),
+        patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+    ):
+        cells = screen._compute_cells(instance)
+
+    assert len(cells) == 8
+    assert cells[7] == ""
+
+
+def test_is_hp04_compute_cells_status_stopping_when_pending(tmp_path):
+    """Happy path: status field shows yellow markup when a stop is pending."""
+    from unittest.mock import patch  # noqa: PLC0415
+
+    from buildcrew_dash.scanner import BuildCrewInstance  # noqa: PLC0415
+    from buildcrew_dash.screens.index import IndexScreen  # noqa: PLC0415
+
+    screen = IndexScreen.__new__(IndexScreen)
+    instance = BuildCrewInstance(
+        pid=1,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "build.log",
+    )
+    with (
+        patch("buildcrew_dash.screens.index.state_reader.read", return_value=None),
+        patch("buildcrew_dash.screens.index.log_parser.parse", return_value=None),
+        patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=True),
+    ):
+        cells = screen._compute_cells(instance)
+
+    assert cells[7] == "[yellow]Stopping...[/yellow]"
+
+
+def test_is_hp05_action_toggle_stop_request_stop(tmp_path):
+    """Happy path: action_toggle_stop calls request_stop and notifies when not yet stopping."""
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    from buildcrew_dash.scanner import BuildCrewInstance, ProcessMonitor, ProcessScanner  # noqa: PLC0415
+    from buildcrew_dash.screens.index import IndexScreen  # noqa: PLC0415
+
+    screen = IndexScreen.__new__(IndexScreen)
+    screen._monitor = ProcessMonitor.__new__(ProcessMonitor)
+    log_path = tmp_path / ".buildcrew" / "logs" / "build.log"
+    instance = BuildCrewInstance(pid=1, project_path=tmp_path, log_path=log_path)
+    screen._monitor._known = {log_path: instance}
+
+    table = MagicMock()
+    table.row_count = 1
+    coord_key = MagicMock()
+    coord_key.row_key.value = f"{log_path}::active"
+    table.coordinate_to_cell_key.return_value = coord_key
+    screen.query_one = MagicMock(return_value=table)
+    screen.notify = MagicMock()
+
+    with (
+        patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.stop_control.request_stop") as mock_req,
+    ):
+        screen.action_toggle_stop()
+
+    mock_req.assert_called_once_with(tmp_path)
+    screen.notify.assert_called_once_with("Stop requested")
+
+
+def test_is_hp06_action_toggle_stop_cancel_stop(tmp_path):
+    """Happy path: action_toggle_stop calls cancel_stop and notifies when already stopping."""
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    from buildcrew_dash.scanner import BuildCrewInstance, ProcessMonitor  # noqa: PLC0415
+    from buildcrew_dash.screens.index import IndexScreen  # noqa: PLC0415
+
+    screen = IndexScreen.__new__(IndexScreen)
+    screen._monitor = ProcessMonitor.__new__(ProcessMonitor)
+    log_path = tmp_path / ".buildcrew" / "logs" / "build.log"
+    instance = BuildCrewInstance(pid=1, project_path=tmp_path, log_path=log_path)
+    screen._monitor._known = {log_path: instance}
+
+    table = MagicMock()
+    table.row_count = 1
+    coord_key = MagicMock()
+    coord_key.row_key.value = f"{log_path}::active"
+    table.coordinate_to_cell_key.return_value = coord_key
+    screen.query_one = MagicMock(return_value=table)
+    screen.notify = MagicMock()
+
+    with (
+        patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=True),
+        patch("buildcrew_dash.screens.index.stop_control.cancel_stop") as mock_cancel,
+    ):
+        screen.action_toggle_stop()
+
+    mock_cancel.assert_called_once_with(tmp_path)
+    screen.notify.assert_called_once_with("Stop cancelled")
+
+
+def test_is_err01_action_toggle_stop_oserror_notifies(tmp_path):
+    """Error: OSError from request_stop is caught and surfaced via notify."""
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    from buildcrew_dash.scanner import BuildCrewInstance, ProcessMonitor  # noqa: PLC0415
+    from buildcrew_dash.screens.index import IndexScreen  # noqa: PLC0415
+
+    screen = IndexScreen.__new__(IndexScreen)
+    screen._monitor = ProcessMonitor.__new__(ProcessMonitor)
+    log_path = tmp_path / ".buildcrew" / "logs" / "build.log"
+    instance = BuildCrewInstance(pid=1, project_path=tmp_path, log_path=log_path)
+    screen._monitor._known = {log_path: instance}
+
+    table = MagicMock()
+    table.row_count = 1
+    coord_key = MagicMock()
+    coord_key.row_key.value = f"{log_path}::active"
+    table.coordinate_to_cell_key.return_value = coord_key
+    screen.query_one = MagicMock(return_value=table)
+    screen.notify = MagicMock()
+
+    exc = PermissionError("permission denied")
+    with (
+        patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.stop_control.request_stop", side_effect=exc),
+    ):
+        screen.action_toggle_stop()
+
+    screen.notify.assert_called_once_with(f"Stop failed: {exc}")
+
+
+def test_is_adv01_action_toggle_stop_empty_table_noop(tmp_path):
+    """Adversarial: action_toggle_stop is a no-op when the table is empty."""
+    from unittest.mock import MagicMock, patch  # noqa: PLC0415
+
+    from buildcrew_dash.scanner import ProcessMonitor  # noqa: PLC0415
+    from buildcrew_dash.screens.index import IndexScreen  # noqa: PLC0415
+
+    screen = IndexScreen.__new__(IndexScreen)
+    screen._monitor = ProcessMonitor.__new__(ProcessMonitor)
+    screen._monitor._known = {}
+
+    table = MagicMock()
+    table.row_count = 0
+    screen.query_one = MagicMock(return_value=table)
+    screen.notify = MagicMock()
+
+    with patch("buildcrew_dash.screens.index.stop_control.request_stop") as mock_req:
+        screen.action_toggle_stop()
+
+    mock_req.assert_not_called()
+    screen.notify.assert_not_called()

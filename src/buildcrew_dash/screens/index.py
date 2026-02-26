@@ -4,10 +4,11 @@ from pathlib import Path
 
 from textual.app import ComposeResult
 from textual.screen import Screen
-from textual.widgets import DataTable, Static
+from textual.widgets import DataTable, Footer, Static
 
 from buildcrew_dash.scanner import ProcessMonitor, ProcessScanner
 from buildcrew_dash import activity_reader, backlog_reader, log_parser, state_reader
+from buildcrew_dash import stop_control
 
 
 class IndexScreen(Screen):
@@ -15,6 +16,7 @@ class IndexScreen(Screen):
         ("enter", "open", "Open"),
         ("right", "open", "Open"),
         ("q", "quit", "Quit"),
+        ("s", "toggle_stop", "Stop/Cancel"),
     ]
 
     def __init__(self) -> None:
@@ -23,6 +25,7 @@ class IndexScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield DataTable(cursor_type="row")
+        yield Footer()
 
     async def on_mount(self) -> None:
         table = self.query_one(DataTable)
@@ -33,6 +36,7 @@ class IndexScreen(Screen):
         table.add_column("Duration", key="duration")
         table.add_column("Health", key="health")
         table.add_column("Budget", key="budget")
+        table.add_column("Status", key="status")
         await self.refresh_data()
         self.set_interval(1.0, self.refresh_data)
 
@@ -85,7 +89,7 @@ class IndexScreen(Screen):
                         table.add_row(*cells, key=k)
 
                 # Update all rows
-                col_keys = ["project", "mode", "phase", "task", "duration", "health", "budget"]
+                col_keys = ["project", "mode", "phase", "task", "duration", "health", "budget", "status"]
                 for k, cells in desired.items():
                     for col_key, value in zip(col_keys, cells):
                         table.update_cell(k, col_key, value)
@@ -141,7 +145,12 @@ class IndexScreen(Screen):
         else:
             duration = "—"
 
-        return (project, mode, phase, task, duration, health, budget)
+        if stop_control.is_stop_pending(instance.project_path):
+            status = "[yellow]Stopping...[/yellow]"
+        else:
+            status = ""
+
+        return (project, mode, phase, task, duration, health, budget, status)
 
     def _compute_queued_cells(self, instance, task_name: str) -> tuple:
         project = instance.project_path.name
@@ -157,7 +166,11 @@ class IndexScreen(Screen):
         duration = "[dim]—[/dim]"
         health = "[dim]○[/dim]"
         budget = "[dim]—[/dim]"
-        return (project, mode, phase, task, duration, health, budget)
+        if stop_control.is_stop_pending(instance.project_path):
+            status = "[yellow]Stopping...[/yellow]"
+        else:
+            status = ""
+        return (project, mode, phase, task, duration, health, budget, status)
 
     def action_open(self) -> None:
         table = self.query_one(DataTable)
@@ -170,6 +183,26 @@ class IndexScreen(Screen):
             return
         from buildcrew_dash.screens.kanban import KanbanScreen  # noqa: PLC0415
         self.app.push_screen(KanbanScreen(self._monitor._known[Path(log_path_str)]))
+
+    def action_toggle_stop(self) -> None:
+        table = self.query_one(DataTable)
+        if table.row_count == 0:
+            return
+        row_key: str = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+        log_path_str = row_key.split("::")[0]
+        if Path(log_path_str) not in self._monitor._known:
+            self.notify("Instance no longer running")
+            return
+        instance = self._monitor._known[Path(log_path_str)]
+        try:
+            if stop_control.is_stop_pending(instance.project_path):
+                stop_control.cancel_stop(instance.project_path)
+                self.notify("Stop cancelled")
+            else:
+                stop_control.request_stop(instance.project_path)
+                self.notify("Stop requested")
+        except OSError as e:
+            self.notify(f"Stop failed: {e}")
 
     def action_quit(self) -> None:
         self.app.exit()

@@ -20,6 +20,14 @@ from buildcrew_dash.__main__ import BuildCrewDashApp
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def _mock_stop_control_default():
+    with patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False):
+        yield
+
+
 from buildcrew_dash.scanner import BuildCrewInstance, ProcessMonitor, ProcessScanner
 from buildcrew_dash.screens.index import IndexScreen
 from buildcrew_dash.state_reader import WorkflowState
@@ -118,8 +126,8 @@ def test_hp07_on_mount_is_sync_and_calls_push_screen():
     assert '"index"' in source or "'index'" in source
 
 
-def test_hp08_compute_cells_returns_7_tuple_with_project_name():
-    """HP-08: _compute_cells returns (project, mode, ...) where project = project_path.name."""
+def test_hp08_compute_cells_returns_8_tuple_with_project_name():
+    """HP-08: _compute_cells returns (project, mode, ...) 8-tuple where project = project_path.name."""
     screen = IndexScreen()
     inst = _make_instance("/home/user/myproject")
     state = _make_state()
@@ -130,7 +138,7 @@ def test_hp08_compute_cells_returns_7_tuple_with_project_name():
         cells = screen._compute_cells(inst)
 
     assert isinstance(cells, tuple)
-    assert len(cells) == 7
+    assert len(cells) == 8
     assert cells[0] == "myproject"
     assert cells[1] == "—"
 
@@ -144,7 +152,7 @@ def test_hp09_compute_cells_all_fields_populated():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        project, _, phase, task, duration, health, budget = screen._compute_cells(inst)
+        project, _, phase, task, duration, health, budget, _ = screen._compute_cells(inst)
 
     assert project != "—"
     assert phase != "—"
@@ -162,7 +170,7 @@ def test_hp10_compute_cells_no_state_returns_dashes():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=None), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        project, _, phase, task, duration, health, budget = screen._compute_cells(inst)
+        project, _, phase, task, duration, health, budget, _ = screen._compute_cells(inst)
 
     assert phase == "—"
     assert task == "—"
@@ -178,7 +186,7 @@ def test_hp11_health_green_when_age_lt_10():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _, _ = screen._compute_cells(inst)
 
     assert health == "[green]●[/green]"
 
@@ -192,7 +200,7 @@ def test_hp12_health_yellow_when_age_eq_10():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _, _ = screen._compute_cells(inst)
 
     assert health == "[yellow]●[/yellow]"
 
@@ -206,7 +214,7 @@ def test_hp13_health_yellow_when_age_eq_30():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _, _ = screen._compute_cells(inst)
 
     assert health == "[yellow]●[/yellow]"
 
@@ -220,7 +228,7 @@ def test_hp14_health_red_when_age_eq_31():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _, _ = screen._compute_cells(inst)
 
     assert health == "[red]●[/red]"
 
@@ -233,7 +241,7 @@ def test_hp15_health_red_when_state_is_none():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=None), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _, _ = screen._compute_cells(inst)
 
     assert health == "[red]●[/red]"
 
@@ -247,7 +255,7 @@ def test_hp16_budget_running_uses_display_count():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget, _ = screen._compute_cells(inst)
 
     assert budget == "5/15"
 
@@ -261,7 +269,7 @@ def test_hp17_duration_format():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, duration, _, _ = screen._compute_cells(inst)
+        _, _, _, _, duration, _, _, _ = screen._compute_cells(inst)
 
     assert ":" in duration
     assert duration != "—"
@@ -276,7 +284,7 @@ def test_hp18_duration_dash_when_no_start_time():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, duration, _, _ = screen._compute_cells(inst)
+        _, _, _, _, duration, _, _, _ = screen._compute_cells(inst)
 
     assert duration == "—"
 
@@ -303,7 +311,7 @@ def test_err01_task_gt_40_chars_truncated():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _, _ = screen._compute_cells(inst)
 
     assert task == "Task 1/3: " + "a" * 41 + "..."
 
@@ -317,7 +325,7 @@ def test_err02_task_exactly_40_chars_no_truncation():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _, _ = screen._compute_cells(inst)
 
     assert task == "Task 1/3: " + "a" * 40 + "..."
 
@@ -405,7 +413,7 @@ def test_edge01_budget_complete_status_no_increment():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget, _ = screen._compute_cells(inst)
 
     assert budget == "4/15"
 
@@ -419,21 +427,21 @@ def test_edge02_task_empty_string():
 
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _, _ = screen._compute_cells(inst)
 
     assert task == "Task 1/3: ..."
 
 
 @pytest.mark.anyio(backends=["asyncio"])
 async def test_edge03_datatable_columns_after_mount():
-    """EDGE-03: DataTable has exactly 7 expected column keys after app startup."""
+    """EDGE-03: DataTable has exactly 8 expected column keys after app startup."""
     with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[]):
         async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
             await pilot.pause()
             from textual.widgets import DataTable  # noqa: PLC0415
             table = pilot.app.screen.query_one(DataTable)
             col_keys = {ck.value for ck in table.columns.keys()}
-            assert col_keys == {"project", "mode", "phase", "task", "duration", "health", "budget"}
+            assert col_keys == {"project", "mode", "phase", "task", "duration", "health", "budget", "status"}
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -676,7 +684,7 @@ def test_discovery_mode_budget_dash():
     inst = _make_instance()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=_make_state(phase="discovery")), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=_make_log_summary()):
-        project, _, phase, task, duration, health, budget = screen._compute_cells(inst)
+        project, _, phase, task, duration, health, budget, _ = screen._compute_cells(inst)
     assert budget == "—"
     assert phase == "discovery"
     assert task == "Task 1/3: implement auth..."
@@ -695,7 +703,7 @@ def test_ac06_label_4_tokens_exact_fit():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _, _ = screen._compute_cells(inst)
     assert task == "Task 2/5: implement auth flow now..."
 
 
@@ -707,7 +715,7 @@ def test_ac06_label_5_tokens_truncated_at_4():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _, _ = screen._compute_cells(inst)
     assert task == "Task 2/5: implement auth flow now..."
 
 
@@ -719,7 +727,7 @@ def test_ac06_label_1_token():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _, _ = screen._compute_cells(inst)
     assert task == "Task 2/5: short..."
 
 
@@ -731,7 +739,7 @@ def test_ac06_label_0_tokens():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, task, _, _, _ = screen._compute_cells(inst)
+        _, _, _, task, _, _, _, _ = screen._compute_cells(inst)
     assert task == "Task 2/5: ..."
 
 
@@ -750,7 +758,7 @@ def test_hp_awaiting_input_health():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _, _ = screen._compute_cells(inst)
     assert health == "[yellow]⏸[/yellow]"
 
 
@@ -764,7 +772,7 @@ def test_hp_permission_denied_health():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _, _ = screen._compute_cells(inst)
     assert health == "[yellow]⚠[/yellow]"
 
 
@@ -778,7 +786,7 @@ def test_hp_max_turns_health():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, health, _ = screen._compute_cells(inst)
+        _, _, _, _, _, health, _, _ = screen._compute_cells(inst)
     assert health == "[red]⚠[/red]"
 
 
@@ -796,7 +804,7 @@ def test_hp_awaiting_input_budget_raw():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget, _ = screen._compute_cells(inst)
     assert budget == "4/15"
 
 
@@ -809,7 +817,7 @@ def test_hp_permission_denied_budget_raw():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget, _ = screen._compute_cells(inst)
     assert budget == "4/15"
 
 
@@ -822,7 +830,7 @@ def test_hp_max_turns_budget_raw():
     log_summary = _make_log_summary()
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
-        _, _, _, _, _, _, budget = screen._compute_cells(inst)
+        _, _, _, _, _, _, budget, _ = screen._compute_cells(inst)
     assert budget == "4/15"
 
 
@@ -1088,3 +1096,157 @@ async def test_queued_rows_removed_on_next_poll(tmp_path):
             assert not any("::queued::" in k for k in key_values), (
                 f"Queued keys still present: {key_values}"
             )
+
+
+# ---------------------------------------------------------------------------
+# Stop/Cancel: new tests
+# ---------------------------------------------------------------------------
+
+
+def test_s_binding_present():
+    """s keybinding for toggle_stop is in IndexScreen.BINDINGS."""
+    bindings = list(IndexScreen.BINDINGS)
+    assert ("s", "toggle_stop", "Stop/Cancel") in bindings
+
+
+def test_footer_in_compose():
+    """compose() yields a Footer() widget."""
+    source = inspect.getsource(IndexScreen.compose)
+    assert "Footer()" in source
+
+
+def test_compute_cells_returns_8_tuple():
+    """_compute_cells returns an 8-tuple."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state()
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        cells = screen._compute_cells(inst)
+    assert len(cells) == 8
+
+
+def test_status_empty_when_not_stopping():
+    """_compute_cells returns '' at index 7 when is_stop_pending returns False."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state()
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary):
+        cells = screen._compute_cells(inst)
+    assert cells[7] == ""
+
+
+def test_status_stopping_when_pending():
+    """_compute_cells returns '[yellow]Stopping...[/yellow]' at index 7 when is_stop_pending returns True."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state()
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=True):
+        cells = screen._compute_cells(inst)
+    assert cells[7] == "[yellow]Stopping...[/yellow]"
+
+
+def test_action_toggle_stop_noop_empty_table():
+    """action_toggle_stop is a no-op when table has 0 rows."""
+    screen = IndexScreen()
+    with patch("buildcrew_dash.screens.index.stop_control.request_stop") as mock_req, \
+         patch("buildcrew_dash.screens.index.stop_control.cancel_stop") as mock_cancel:
+        # Patch query_one to return a mock table with row_count=0
+        mock_table = MagicMock()
+        mock_table.row_count = 0
+        screen.query_one = lambda cls: mock_table
+        screen.action_toggle_stop()
+        mock_req.assert_not_called()
+        mock_cancel.assert_not_called()
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_action_toggle_stop_calls_request_stop(tmp_path):
+    """action_toggle_stop calls request_stop and notifies 'Stop requested' when not stopping."""
+    inst = BuildCrewInstance(
+        pid=12345,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "buildcrew-2024-01-01_00-00-00-12345.log",
+    )
+    state = _make_state(timestamp=int(time.time()) - 5)
+    log_summary = _make_log_summary()
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]), \
+         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False), \
+         patch("buildcrew_dash.screens.index.stop_control.request_stop") as mock_req:
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            notified = []
+            screen.notify = lambda msg, **_: notified.append(msg)
+            screen.action_toggle_stop()
+            mock_req.assert_called_once_with(inst.project_path)
+            assert "Stop requested" in notified
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_action_toggle_stop_calls_cancel_stop(tmp_path):
+    """action_toggle_stop calls cancel_stop and notifies 'Stop cancelled' when already stopping."""
+    inst = BuildCrewInstance(
+        pid=12345,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "buildcrew-2024-01-01_00-00-00-12345.log",
+    )
+    state = _make_state(timestamp=int(time.time()) - 5)
+    log_summary = _make_log_summary()
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]), \
+         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=True), \
+         patch("buildcrew_dash.screens.index.stop_control.cancel_stop") as mock_cancel:
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            notified = []
+            screen.notify = lambda msg, **_: notified.append(msg)
+            screen.action_toggle_stop()
+            mock_cancel.assert_called_once_with(inst.project_path)
+            assert "Stop cancelled" in notified
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_action_toggle_stop_queued_row(tmp_path):
+    """action_toggle_stop resolves queued-row key to the correct instance and calls request_stop."""
+    inst = BuildCrewInstance(
+        pid=12345,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "buildcrew-2024-01-01_00-00-00-12345.log",
+    )
+    state = _make_state(timestamp=int(time.time()) - 5)
+    log_summary = _make_log_summary()
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=["task-a", "task-b"]), \
+         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False), \
+         patch("buildcrew_dash.screens.index.stop_control.request_stop") as mock_req:
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            from textual.widgets import DataTable  # noqa: PLC0415
+            table = pilot.app.screen.query_one(DataTable)
+            assert table.row_count == 2, f"Expected 2 rows, got {table.row_count}"
+            # Move cursor to queued row
+            table.move_cursor(row=1)
+            screen = pilot.app.screen
+            notified = []
+            screen.notify = lambda msg, **_: notified.append(msg)
+            screen.action_toggle_stop()
+            mock_req.assert_called_once_with(inst.project_path)
+            assert "Stop requested" in notified
