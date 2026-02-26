@@ -11,6 +11,7 @@ class PhaseRecord:
     verdict: str | None = None
     started_at: datetime | None = None
     ended_at: datetime | None = None
+    task_num: int = 0
 
 
 @dataclass
@@ -53,6 +54,7 @@ def parse(log_path: Path) -> LogSummary:
     completed_tasks: list[str] = []
     flags_found = False
     start_time_found = False
+    current_task_num = 1
 
     for line in lines:
         if not line.startswith("[") or "]" not in line:
@@ -80,7 +82,7 @@ def parse(log_path: Path) -> LogSummary:
 
         if "=== PHASE:" in content and " started " in content:
             name = content.split(" started ", 1)[0][11:]
-            phases.append(PhaseRecord(name=name, status="active", started_at=ts))
+            phases.append(PhaseRecord(name=name, status="active", started_at=ts, task_num=current_task_num))
             continue
 
         if "=== PHASE:" in content and " ended " in content:
@@ -99,13 +101,14 @@ def parse(log_path: Path) -> LogSummary:
 
         if "[INFO] Skipping phase:" in content:
             name = content.split("Skipping phase: ", 1)[1].split()[0]
-            phases.append(PhaseRecord(name=name, status="skipped"))
+            phases.append(PhaseRecord(name=name, status="skipped", task_num=current_task_num))
             continue
 
         if content.startswith("[OK] Completed: "):
             text = content[len("[OK] Completed: "):].strip()
             if text not in completed_tasks:
                 completed_tasks.append(text)
+            current_task_num += 1
 
     recent_lines = [l for l in lines if l.strip()][-20:]
 

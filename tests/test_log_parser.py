@@ -25,6 +25,9 @@ def test_complete_run():
     assert result.flags["branch"] == "main"
     assert len(result.flags) == 8
     assert result.completed_tasks == ["implement the thing"]
+    # All phases are for task 1 (single completed task)
+    for phase in result.phases:
+        assert phase.task_num == 1
 
 
 def test_in_progress():
@@ -40,6 +43,10 @@ def test_in_progress():
     assert result.phases[2].started_at == datetime(2024, 1, 15, 11, 0, 6)
     assert result.phases[2].ended_at is None
     assert result.completed_tasks == []
+    # No [OK] Completed: → all phases are task 1
+    assert result.phases[0].task_num == 1
+    assert result.phases[1].task_num == 1
+    assert result.phases[2].task_num == 1
 
 
 def test_retry():
@@ -52,6 +59,7 @@ def test_retry():
     assert result.phases[0].started_at == datetime(2024, 1, 15, 12, 0, 1)
     assert result.phases[0].ended_at == datetime(2024, 1, 15, 12, 0, 3)
     assert result.completed_tasks == []
+    assert result.phases[0].task_num == 1
 
 
 def test_missing_file():
@@ -133,3 +141,58 @@ def test_fallback_project_path(tmp_path):
     # log_file.parent = .buildcrew/logs, .parent.parent = .buildcrew, .parent.parent.parent = tmp_path
     assert result.project_path == log_file.resolve().parent.parent.parent
     assert result.project_path == tmp_path.resolve()
+
+
+def test_multi_task_phases_have_correct_task_nums(tmp_path):
+    """AC-03: Two-task log: first task's phases get task_num=1, second task's phases get task_num=2."""
+    log_file = tmp_path / "buildcrew-2024-01-01_00-00-00-1.log"
+    log_file.write_text(
+        "[2024-01-01T00:00:01] === PHASE: spec started (max_turns=5) ===\n"
+        "[2024-01-01T00:00:02] === PHASE: spec ended (verdict: ok) ===\n"
+        "[2024-01-01T00:00:03] === PHASE: build started (max_turns=5) ===\n"
+        "[2024-01-01T00:00:04] === PHASE: build ended (verdict: ok) ===\n"
+        "[2024-01-01T00:00:05] [OK] Completed: task1\n"
+        "[2024-01-01T00:00:06] === PHASE: spec started (max_turns=5) ===\n"
+        "[2024-01-01T00:00:07] === PHASE: spec ended (verdict: ok) ===\n"
+        "[2024-01-01T00:00:08] === PHASE: build started (max_turns=5) ===\n"
+        "[2024-01-01T00:00:09] === PHASE: build ended (verdict: ok) ===\n"
+        "[2024-01-01T00:00:10] [OK] Completed: task2\n"
+    )
+    result = parse(log_file)
+    assert len(result.phases) == 4
+    assert result.phases[0].task_num == 1  # first spec
+    assert result.phases[1].task_num == 1  # first build
+    assert result.phases[2].task_num == 2  # second spec
+    assert result.phases[3].task_num == 2  # second build
+    assert len(result.completed_tasks) == 2
+
+
+def test_phases_before_any_completed_have_task_num_1(tmp_path):
+    """AC-02 variant: Phases before any [OK] Completed: line all get task_num=1."""
+    log_file = tmp_path / "buildcrew-2024-01-01_00-00-00-1.log"
+    log_file.write_text(
+        "[2024-01-01T00:00:01] === PHASE: spec started (max_turns=5) ===\n"
+        "[2024-01-01T00:00:02] === PHASE: spec ended (verdict: ok) ===\n"
+        "[2024-01-01T00:00:03] [INFO] Skipping phase: research\n"
+        "[2024-01-01T00:00:04] === PHASE: build started (max_turns=5) ===\n"
+        "[2024-01-01T00:00:05] [OK] Completed: mytask\n"
+    )
+    result = parse(log_file)
+    assert len(result.phases) == 3
+    assert result.phases[0].task_num == 1  # spec (complete)
+    assert result.phases[1].task_num == 1  # research (skipped)
+    assert result.phases[2].task_num == 1  # build (active — no ended line)
+    assert len(result.completed_tasks) == 1
+
+
+def test_skipped_phases_get_task_num(tmp_path):
+    """Skipped phases get the current task_num at the time they appear."""
+    log_file = tmp_path / "buildcrew-2024-01-01_00-00-00-1.log"
+    log_file.write_text(
+        "[2024-01-01T00:00:01] [INFO] Skipping phase: research\n"
+    )
+    result = parse(log_file)
+    assert len(result.phases) == 1
+    assert result.phases[0].name == "research"
+    assert result.phases[0].status == "skipped"
+    assert result.phases[0].task_num == 1

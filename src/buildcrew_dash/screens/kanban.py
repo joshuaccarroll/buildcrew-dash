@@ -4,8 +4,8 @@ import time
 
 from textual.app import ComposeResult
 from textual.screen import Screen
-from textual.widgets import Collapsible, Footer, Header, Label, Log, Static
-from textual.containers import ScrollableContainer, Vertical
+from textual.widgets import Collapsible, DataTable, Footer, Header, Log, Static
+from textual.containers import ScrollableContainer
 
 from buildcrew_dash import activity_reader, log_parser, state_reader
 from buildcrew_dash import stop_control
@@ -39,11 +39,7 @@ class KanbanScreen(Screen):
 
     CSS = (
         "#kanban-area { layout: horizontal; overflow-x: auto; overflow-y: hidden; height: 1fr; min-height: 8; }\n"
-        ".task-card { background: $panel; padding: 0 1; margin-bottom: 1; }\n"
-        ".phase-card { color: $success; padding: 0 1; margin-bottom: 1; }\n"
-        ".status-awaiting_input { color: $warning; }\n"
-        ".status-permission_denied { color: $error; }\n"
-        ".status-max_turns { color: $error; }\n"
+        "#task-table { height: 1fr; }\n"
         "#auto-badge { padding: 0 1; }\n"
         "#phase-strip { padding: 0 1; color: $text-muted; }\n"
         "#task-header { padding: 0 1; text-style: bold; }\n"
@@ -63,16 +59,65 @@ class KanbanScreen(Screen):
         yield Static("", id="auto-badge")
         yield Static("", id="phase-strip")
         with ScrollableContainer(id="kanban-area"):
-            for col_id, label in COLUMNS:
-                with Vertical(id=col_id):
-                    yield Label(label)
+            yield DataTable(id="task-table", cursor_type="none")
         with Collapsible(title="Log", id="log-panel", collapsed=True):
             yield Log(id="log-widget")
         yield Footer()
 
     async def on_mount(self) -> None:
+        self._setup_table()
         self.set_interval(1.0, self.refresh_data)
         await self.refresh_data()
+
+    def _setup_table(self) -> None:
+        table = self.query_one("#task-table", DataTable)
+        for col_id, col_label in COLUMNS:
+            table.add_column(col_label, key=col_id)
+
+    def _phase_cell(self, col_key: str, col_label: str, task_row_num: int, state, task_phases: list) -> str:
+        # 1: active task + active phase column
+        if state is not None and task_row_num == state.task_num:
+            if col_key == f"col-{state.phase}":
+                if state.phase_status == "running":
+                    return f"Task {state.task_num}"
+                elif state.phase_status == "awaiting_input":
+                    return f"[yellow]Task {state.task_num} ⏸[/yellow]"
+                elif state.phase_status in {"max_turns", "permission_denied"}:
+                    return f"[red]Task {state.task_num} ⚠[/red]"
+            # 2: active task + replanning
+            if state.phase == "replanning":
+                last_non_skipped = None
+                for rec in reversed(task_phases):
+                    if rec.status != "skipped" and rec.name != "replanning":
+                        last_non_skipped = rec
+                        break
+                target = f"col-{last_non_skipped.name}" if last_non_skipped else "col-build"
+                if col_key == target:
+                    return f"[yellow]Task {state.task_num} replan[/yellow]"
+        # 3-5: phase record (active-task checks above must precede these)
+        for rec in task_phases:
+            if col_key == f"col-{rec.name}" and rec.task_num == task_row_num:
+                if rec.status == "complete":
+                    return f"[green]✓ {rec.verdict}[/green]"
+                elif rec.status == "skipped":
+                    return "[dim]- skipped[/dim]"
+                elif rec.status == "failed":
+                    return f"[red]✗ {rec.verdict}[/red]"
+        # 6: completed task → complete column
+        if state is not None and task_row_num < state.task_num and col_key == "col-complete":
+            return f"Task {task_row_num}"
+        # 7: pending task → todo column
+        if state is not None and task_row_num > state.task_num and col_key == "col-todo":
+            return f"Task {task_row_num}"
+        # 8: empty
+        return ""
+
+    def _build_row(self, task_row_num: int, state, log_summary) -> tuple:
+        task_phases = [p for p in log_summary.phases if p.task_num == task_row_num]
+        return tuple(
+            self._phase_cell(col_id, col_label, task_row_num, state, task_phases)
+            for col_id, col_label in COLUMNS
+        )
 
     async def refresh_data(self) -> None:
         try:
@@ -102,9 +147,13 @@ class KanbanScreen(Screen):
 
             # Update task header
             if state is not None:
-                name = state.task_name
-                suffix = "..." if len(name) > 50 else ""
-                header_text = f"Task {state.task_num}/{state.total_tasks}: {name[:50]}{suffix}"
+                header_text = f"Task {state.task_num}/{state.total_tasks}: {state.task_name[:50]}"
+                if (state.phase_status == "running" and activity is not None
+                        and int(time.time()) - activity.timestamp < 30):
+                    header_text += (
+                        f"  · Turn {activity.turn}/{activity.max_turns}"
+                        f" · {activity.tool}: {activity.tool_input[:30]}"
+                    )
             else:
                 header_text = ""
             if stop_control.is_stop_pending(self.instance.project_path):
@@ -115,13 +164,18 @@ class KanbanScreen(Screen):
             auto_text = "[bold cyan]AUTO[/bold cyan]" if (state is not None and state.auto_mode) else ""
             self.query_one("#auto-badge", Static).update(auto_text)
 
-            # Update phase strip
+            # Update phase strip (filtered to current task)
+            phases_for_strip = (
+                [p for p in log_summary.phases if p.task_num == state.task_num]
+                if state is not None
+                else log_summary.phases
+            )
             parts = []
             for _col_id, phase_label in COLUMNS:
                 if phase_label not in PHASE_COL_IDS:
                     continue
                 rec = None
-                for r in reversed(log_summary.phases):
+                for r in reversed(phases_for_strip):
                     if r.name == phase_label:
                         rec = r
                         break
@@ -142,19 +196,10 @@ class KanbanScreen(Screen):
                 parts.append(f"{sym} {phase_label}")
             self.query_one("#phase-strip", Static).update(" → ".join(parts))
 
-            # Remove all existing task cards
-            for widget in self.query(".task-card"):
-                await widget.remove()
-
-            # Remove all existing phase cards
-            for widget in self.query(".phase-card"):
-                await widget.remove()
-
+            # Discovery mode: hide kanban area, show log
             if state is not None and state.phase == "discovery":
                 self.query_one("#kanban-area").display = False
                 self.query_one("#log-panel", Collapsible).collapsed = False
-                # NOTE: log write here is intentionally separate from the normal-path
-                # log write at the end of this method (which does not clear first).
                 log_widget = self.query_one("#log-widget", Log)
                 log_widget.clear()
                 log_widget.write_lines(log_summary.recent_lines)
@@ -162,62 +207,14 @@ class KanbanScreen(Screen):
             else:
                 self.query_one("#kanban-area").display = True
 
-            # Rule 2: completed tasks
-            i = 1
-            for task_name in log_summary.completed_tasks:
-                if state is None or task_name != state.task_name:
-                    await self.query_one("#col-complete").mount(Static(f"Task {i}", classes="task-card"))
-                    i += 1
-
-            # Rule 3: active task (normal phase)
-            if state is not None and state.phase_status in ACTIVE_STATUSES and state.phase != "replanning":
-                if state.phase in PHASE_COL_IDS:
-                    ps = state.phase_status
-                    if ps == "awaiting_input":
-                        label = f"Task {state.task_num}\n⏸ Awaiting input"
-                    elif ps == "permission_denied":
-                        label = f"Task {state.task_num}\n⚠ Needs permission"
-                    elif ps == "max_turns":
-                        label = f"Task {state.task_num}\n⚠ Max turns"
-                    else:  # "running"
-                        label = f"Task {state.task_num}"
-                        if activity is not None and int(time.time()) - activity.timestamp < 30:
-                            label += f"\nTurn {activity.turn}/{activity.max_turns} \u00b7 {activity.tool}: {activity.tool_input[:30]}"
-                    await self.query_one(f"#col-{state.phase}").mount(
-                        Static(label, classes=f"task-card status-{state.phase_status}")
-                    )
-
-            # Rule 4: active task (replanning)
-            if state is not None and state.phase == "replanning":
-                last_phase = None
-                for rec in reversed(log_summary.phases):
-                    if rec.status != "skipped" and rec.name != "replanning":
-                        last_phase = rec
-                        break
-                if last_phase is not None and last_phase.name in PHASE_COL_IDS:
-                    await self.query_one(f"#col-{last_phase.name}").mount(
-                        Static(f"Task {state.task_num}\nReplanning...", classes="task-card")
-                    )
-                else:
-                    await self.query_one("#col-build").mount(
-                        Static(f"Task {state.task_num}\nReplanning...", classes="task-card")
-                    )
-
-            # Rule 7: verdict cards
-            for rec in log_summary.phases:
-                if rec.status == "complete" and rec.name in PHASE_COL_IDS:
-                    await self.query_one(f"#col-{rec.name}").mount(
-                        Static(f"✓ {rec.verdict or 'done'}", classes="phase-card")
-                    )
-
-            # Rule 5: future placeholder cards
-            if state is not None:
-                for n in range(state.task_num + 1, state.total_tasks + 1):
-                    await self.query_one("#col-todo").mount(Static(f"Task {n}", classes="task-card"))
-
-            # Rule 6: no state
+            # Rebuild DataTable
+            table = self.query_one("#task-table", DataTable)
+            table.clear()
             if state is None:
-                await self.query_one("#col-todo").mount(Static("(unknown)", classes="task-card"))
+                table.add_row("(unknown)", *[""] * 9, key="row-unknown")
+            else:
+                for n in range(1, state.total_tasks + 1):
+                    table.add_row(*self._build_row(n, state, log_summary), key=f"task-{n}")
 
             # Update log widget
             log_widget = self.query_one("#log-widget", Log)
