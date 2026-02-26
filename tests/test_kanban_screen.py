@@ -1122,3 +1122,103 @@ async def test_ac11_stale_activity_ignored(tmp_path):
             cards = list(screen.query(".task-card"))
             labels = [str(c.content) for c in cards]
             assert not any("Turn" in lbl for lbl in labels), f"Unexpected 'Turn' in labels with stale activity: {labels}"
+
+
+# ---------------------------------------------------------------------------
+# Stop/Cancel tests (AC-01 through AC-08, AC-09 a-e)
+# ---------------------------------------------------------------------------
+
+
+def test_stop01_s_binding_in_bindings():
+    """AC-01: s key is in BINDINGS with label Stop/Cancel."""
+    binding = next((b for b in KanbanScreen.BINDINGS if b[0] == "s"), None)
+    assert binding is not None
+    assert binding[1] == "toggle_stop"
+    assert binding[2] == "Stop/Cancel"
+
+
+def test_stop02_action_toggle_stop_is_sync():
+    """AC-04: action_toggle_stop is synchronous."""
+    assert not asyncio.iscoroutinefunction(KanbanScreen.action_toggle_stop)
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_stop03_header_shows_stopping_when_pending(tmp_path):
+    """AC-03: header is prefixed with Stopping... when stop is pending."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state()
+    log_summary = _make_log_summary()
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+        patch("buildcrew_dash.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=True),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            header = pilot.app.screen.query_one("#task-header", Static)
+            assert "[yellow]Stopping...[/yellow]" in str(header.content)
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_stop04_action_toggle_stop_requests_stop(tmp_path):
+    """AC-06: action_toggle_stop calls request_stop when no stop is pending."""
+    inst = _make_instance(str(tmp_path))
+    log_summary = _make_log_summary()
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=None),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+        patch("buildcrew_dash.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.stop_control.request_stop") as mock_req,
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            screen.action_toggle_stop()
+            mock_req.assert_called_once_with(inst.project_path)
+
+
+def test_stop05_action_toggle_stop_noop_when_exited(tmp_path):
+    """AC-05: action_toggle_stop is a no-op when _exited is True."""
+    inst = _make_instance(str(tmp_path))
+    screen = KanbanScreen(inst)
+    screen._exited = True
+    with (
+        patch("buildcrew_dash.stop_control.is_stop_pending") as mock_pending,
+        patch("buildcrew_dash.stop_control.request_stop") as mock_req,
+    ):
+        screen.action_toggle_stop()
+        mock_pending.assert_not_called()
+        mock_req.assert_not_called()
+
+
+def test_stop06_action_toggle_stop_cancels_stop(tmp_path):
+    """AC-07: action_toggle_stop calls cancel_stop and notifies when stop is pending."""
+    inst = _make_instance(str(tmp_path))
+    screen = KanbanScreen(inst)
+    screen._exited = False
+    with (
+        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=True),
+        patch("buildcrew_dash.stop_control.cancel_stop") as mock_cancel,
+        patch.object(screen, "notify") as mock_notify,
+    ):
+        screen.action_toggle_stop()
+        mock_cancel.assert_called_once_with(inst.project_path)
+        mock_notify.assert_called_once_with("Stop cancelled")
+
+
+def test_stop07_action_toggle_stop_notifies_on_oserror(tmp_path):
+    """AC-08: action_toggle_stop notifies on OSError and does not re-raise."""
+    inst = _make_instance(str(tmp_path))
+    screen = KanbanScreen(inst)
+    screen._exited = False
+    with (
+        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.stop_control.request_stop", side_effect=OSError("disk full")),
+        patch.object(screen, "notify") as mock_notify,
+    ):
+        screen.action_toggle_stop()  # must not raise
+        mock_notify.assert_called_once_with("Stop failed: disk full")

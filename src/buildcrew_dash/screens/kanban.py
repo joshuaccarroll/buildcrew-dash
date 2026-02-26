@@ -8,6 +8,7 @@ from textual.widgets import Collapsible, Footer, Header, Label, Log, Static
 from textual.containers import ScrollableContainer, Vertical
 
 from buildcrew_dash import activity_reader, log_parser, state_reader
+from buildcrew_dash import stop_control
 from buildcrew_dash.scanner import BuildCrewInstance, ProcessMonitor, ProcessScanner
 
 
@@ -32,6 +33,7 @@ class KanbanScreen(Screen):
     BINDINGS = [
         ("escape", "app.pop_screen", "Back"),
         ("left", "app.pop_screen", "Back"),
+        ("s", "toggle_stop", "Stop/Cancel"),
         ("l", "toggle_log", "Log"),
     ]
 
@@ -105,6 +107,8 @@ class KanbanScreen(Screen):
                 header_text = f"Task {state.task_num}/{state.total_tasks}: {name[:50]}{suffix}"
             else:
                 header_text = ""
+            if stop_control.is_stop_pending(self.instance.project_path):
+                header_text = "[yellow]Stopping...[/yellow]  " + header_text
             self.query_one("#task-header", Static).update(header_text)
 
             # Update auto badge
@@ -225,3 +229,16 @@ class KanbanScreen(Screen):
     def action_toggle_log(self) -> None:
         panel = self.query_one("#log-panel", Collapsible)
         panel.collapsed = not panel.collapsed
+
+    def action_toggle_stop(self) -> None:
+        if self._exited:
+            return
+        try:
+            if stop_control.is_stop_pending(self.instance.project_path):
+                stop_control.cancel_stop(self.instance.project_path)
+                self.notify("Stop cancelled")
+            else:
+                stop_control.request_stop(self.instance.project_path)
+                self.notify("Stop requested")
+        except OSError as exc:
+            self.notify(f"Stop failed: {exc}")
