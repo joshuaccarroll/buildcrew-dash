@@ -1258,17 +1258,66 @@ async def test_action_toggle_stop_queued_row(tmp_path):
 
 
 def test_batch_mode_task_and_budget():
-    """Batch mode: task cell shows 'Batch: N tasks (parallel)' and budget is '—'."""
+    """Batch mode: task cell shows fallback text when manifest missing, budget is '—'."""
     screen = IndexScreen()
     inst = _make_instance()
     state = _make_state(phase="batch", task_num=0, total_tasks=5)
     with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=_make_log_summary()), \
-         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None):
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None), \
+         patch("buildcrew_dash.screens.index.manifest_reader.read", return_value=None):
         project, _, phase, task, duration, health, budget, _ = screen._compute_cells(inst)
     assert task == "Batch: 5 tasks (parallel)"
     assert budget == "—"
     assert phase == "batch"
+
+
+def test_batch_mode_task_with_manifest():
+    """Batch mode with manifest: task cell shows status counts."""
+    from buildcrew_dash.manifest_reader import BatchManifest, BatchTask  # noqa: PLC0415
+    manifest = BatchManifest(
+        batch_id="test", base_branch="main", base_commit="abc",
+        max_parallel=5, started_at="2024-01-01T12:00:00",
+        tasks=[
+            BatchTask(index=1, text="T1", slug="t1", branch="b/t1", worktree="w/t1", status="running", started_at="2024-01-01T12:00:01"),
+            BatchTask(index=2, text="T2", slug="t2", branch="b/t2", worktree="w/t2", status="completed", exit_code=0, started_at="2024-01-01T12:00:02", completed_at="2024-01-01T12:05:00"),
+            BatchTask(index=3, text="T3", slug="t3", branch="b/t3", worktree="w/t3", status="pending"),
+        ],
+    )
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase="batch", task_num=0, total_tasks=3)
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=_make_log_summary()), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None), \
+         patch("buildcrew_dash.screens.index.manifest_reader.read", return_value=manifest):
+        _, _, _, task, _, _, _, _ = screen._compute_cells(inst)
+    assert "1 running" in task
+    assert "1 done" in task
+    assert "1 pending" in task
+
+
+def test_batch_mode_task_with_manifest_interrupted():
+    """Batch mode with manifest: interrupted count is shown."""
+    from buildcrew_dash.manifest_reader import BatchManifest, BatchTask  # noqa: PLC0415
+    manifest = BatchManifest(
+        batch_id="test", base_branch="main", base_commit="abc",
+        max_parallel=5, started_at="2024-01-01T12:00:00",
+        tasks=[
+            BatchTask(index=1, text="T1", slug="t1", branch="b/t1", worktree="w/t1", status="interrupted", exit_code=130, started_at="2024-01-01T12:00:01", completed_at="2024-01-01T12:01:00"),
+            BatchTask(index=2, text="T2", slug="t2", branch="b/t2", worktree="w/t2", status="completed", exit_code=0, started_at="2024-01-01T12:00:02", completed_at="2024-01-01T12:05:00"),
+        ],
+    )
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase="batch", task_num=0, total_tasks=2)
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=_make_log_summary()), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None), \
+         patch("buildcrew_dash.screens.index.manifest_reader.read", return_value=manifest):
+        _, _, _, task, _, _, _, _ = screen._compute_cells(inst)
+    assert "1 interrupted" in task
+    assert "1 done" in task
 
 
 @pytest.mark.anyio(backends=["asyncio"])

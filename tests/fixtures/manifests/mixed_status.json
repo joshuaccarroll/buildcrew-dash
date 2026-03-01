@@ -1,0 +1,64 @@
+{
+  "batch_id": "20240101-130000",
+  "base_branch": "main",
+  "base_commit": "def789abc012",
+  "max_parallel": 3,
+  "started_at": "2024-01-01T13:00:00",
+  "tasks": [
+    {
+      "index": 1,
+      "text": "Task completed",
+      "slug": "task-completed",
+      "branch": "buildcrew/task-completed",
+      "worktree": ".buildcrew/batch/worktrees/task-completed",
+      "status": "completed",
+      "exit_code": 0,
+      "started_at": "2024-01-01T13:00:01",
+      "completed_at": "2024-01-01T13:04:00"
+    },
+    {
+      "index": 2,
+      "text": "Task running",
+      "slug": "task-running",
+      "branch": "buildcrew/task-running",
+      "worktree": ".buildcrew/batch/worktrees/task-running",
+      "status": "running",
+      "exit_code": null,
+      "started_at": "2024-01-01T13:00:02",
+      "completed_at": null
+    },
+    {
+      "index": 3,
+      "text": "Task pending",
+      "slug": "task-pending",
+      "branch": "buildcrew/task-pending",
+      "worktree": ".buildcrew/batch/worktrees/task-pending",
+      "status": "pending",
+      "exit_code": null,
+      "started_at": null,
+      "completed_at": null
+    },
+    {
+      "index": 4,
+      "text": "Task failed",
+      "slug": "task-failed",
+      "branch": "buildcrew/task-failed",
+      "worktree": ".buildcrew/batch/worktrees/task-failed",
+      "status": "failed",
+      "exit_code": 1,
+      "started_at": "2024-01-01T13:00:03",
+      "completed_at": "2024-01-01T13:02:00"
+    },
+    {
+      "index": 5,
+      "text": "Task interrupted",
+      "slug": "task-interrupted",
+      "branch": "buildcrew/task-interrupted",
+      "worktree": ".buildcrew/batch/worktrees/task-interrupted",
+      "status": "interrupted",
+      "exit_code": 130,
+      "started_at": "2024-01-01T13:00:04",
+      "completed_at": "2024-01-01T13:01:30"
+    }
+  ]
+}

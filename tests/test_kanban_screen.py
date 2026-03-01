@@ -1377,55 +1377,146 @@ def test_stop07_action_toggle_stop_notifies_on_oserror(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _make_batch_manifest(**kwargs):
+    """Create a mock BatchManifest for testing."""
+    from buildcrew_dash.manifest_reader import BatchManifest, BatchTask  # noqa: PLC0415
+    defaults = dict(
+        batch_id="20240101-120000",
+        base_branch="main",
+        base_commit="abc123",
+        max_parallel=5,
+        started_at="2024-01-01T12:00:00",
+        tasks=[
+            BatchTask(index=1, text="Task one", slug="task-one",
+                      branch="buildcrew/task-one", worktree=".buildcrew/batch/worktrees/task-one",
+                      status="running", started_at="2024-01-01T12:00:01"),
+            BatchTask(index=2, text="Task two", slug="task-two",
+                      branch="buildcrew/task-two", worktree=".buildcrew/batch/worktrees/task-two",
+                      status="completed", exit_code=0,
+                      started_at="2024-01-01T12:00:02", completed_at="2024-01-01T12:05:30"),
+            BatchTask(index=3, text="Task three", slug="task-three",
+                      branch="buildcrew/task-three", worktree=".buildcrew/batch/worktrees/task-three",
+                      status="pending"),
+        ],
+    )
+    defaults.update(kwargs)
+    return BatchManifest(**defaults)
+
+
+_SENTINEL = object()
+
+
+def _batch_patches(inst, manifest=_SENTINEL, wt_phase="build"):
+    """Context manager with all patches needed for batch mode tests."""
+    if manifest is _SENTINEL:
+        manifest = _make_batch_manifest()
+
+    def mock_state_read(path):
+        path_str = str(path)
+        if "worktrees" in path_str:
+            return _make_state(phase=wt_phase, task_num=1, total_tasks=1)
+        return _make_state(phase="batch", task_num=0, total_tasks=5)
+
+    from contextlib import ExitStack  # noqa: PLC0415
+    stack = ExitStack()
+    stack.enter_context(patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]))
+    stack.enter_context(patch("buildcrew_dash.state_reader.read", side_effect=mock_state_read))
+    stack.enter_context(patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()))
+    stack.enter_context(patch("buildcrew_dash.activity_reader.read", return_value=None))
+    stack.enter_context(patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False))
+    stack.enter_context(patch("buildcrew_dash.manifest_reader.read", return_value=manifest))
+    return stack
+
+
 @pytest.mark.anyio(backends=["asyncio"])
 async def test_batch_mode_kanban_area_hidden(tmp_path):
-    """Batch mode: kanban area is hidden."""
+    """Batch mode: kanban area is hidden, batch area is visible."""
     inst = _make_instance(str(tmp_path))
-    with (
-        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
-        patch("buildcrew_dash.state_reader.read", return_value=_make_state(phase="batch", task_num=0, total_tasks=5)),
-        patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()),
-        patch("buildcrew_dash.activity_reader.read", return_value=None),
-        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False),
-    ):
+    with _batch_patches(inst):
         async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             screen = pilot.app.screen
             assert screen.query_one("#kanban-area").display is False
+            assert screen.query_one("#batch-area").display is True
 
 
 @pytest.mark.anyio(backends=["asyncio"])
-async def test_batch_mode_log_panel_expanded(tmp_path):
-    """Batch mode: log panel is expanded (not collapsed)."""
+async def test_batch_mode_log_panel_collapsed(tmp_path):
+    """Batch mode: log panel stays collapsed (batch table is primary view)."""
     from textual.widgets import Collapsible  # noqa: PLC0415
 
     inst = _make_instance(str(tmp_path))
-    with (
-        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
-        patch("buildcrew_dash.state_reader.read", return_value=_make_state(phase="batch", task_num=0, total_tasks=5)),
-        patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()),
-        patch("buildcrew_dash.activity_reader.read", return_value=None),
-        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False),
-    ):
+    with _batch_patches(inst):
         async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             screen = pilot.app.screen
-            assert screen.query_one("#log-panel", Collapsible).collapsed is False
+            assert screen.query_one("#log-panel", Collapsible).collapsed is True
 
 
 @pytest.mark.anyio(backends=["asyncio"])
 async def test_batch_mode_header_text(tmp_path):
-    """Batch mode: task header shows 'Batch: N tasks (parallel)'."""
+    """Batch mode: task header shows manifest-aware counts."""
     inst = _make_instance(str(tmp_path))
-    with (
-        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
-        patch("buildcrew_dash.state_reader.read", return_value=_make_state(phase="batch", task_num=0, total_tasks=5)),
-        patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()),
-        patch("buildcrew_dash.activity_reader.read", return_value=None),
-        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False),
-    ):
+    with _batch_patches(inst):
         async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             screen = pilot.app.screen
             header = screen.query_one("#task-header", Static)
-            assert str(header.content) == "Batch: 5 tasks (parallel)"
+            header_str = str(header.content)
+            assert "Batch (3)" in header_str
+            assert "1 running" in header_str
+            assert "1 done" in header_str
+            assert "1 pending" in header_str
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_mode_batch_table_shows_tasks(tmp_path):
+    """Batch mode: batch table has one row per manifest task."""
+    inst = _make_instance(str(tmp_path))
+    with _batch_patches(inst):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            batch_table = screen.query_one("#batch-table", DataTable)
+            assert batch_table.row_count == 3
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_mode_running_task_shows_phase(tmp_path):
+    """Batch mode: running task shows its current phase from worktree state."""
+    inst = _make_instance(str(tmp_path))
+    with _batch_patches(inst, wt_phase="test"):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            batch_table = screen.query_one("#batch-table", DataTable)
+            phase_cell = str(batch_table.get_cell("batch-1", "batch-phase"))
+            assert phase_cell == "test"
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_mode_batch_area_hidden_in_normal_mode(tmp_path):
+    """Normal mode: batch area is hidden."""
+    inst = _make_instance(str(tmp_path))
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=_make_state(phase="build", task_num=1, total_tasks=1)),
+        patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            assert screen.query_one("#batch-area").display is False
+            assert screen.query_one("#kanban-area").display is True
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_mode_no_manifest_fallback(tmp_path):
+    """Batch mode without manifest: falls back to simple header."""
+    inst = _make_instance(str(tmp_path))
+    with _batch_patches(inst, manifest=None):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            header = screen.query_one("#task-header", Static)
+            assert "Batch: 5 tasks (parallel)" in str(header.content)

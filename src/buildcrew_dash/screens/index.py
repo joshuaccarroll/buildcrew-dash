@@ -7,7 +7,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from buildcrew_dash.scanner import ProcessMonitor, ProcessScanner
-from buildcrew_dash import activity_reader, backlog_reader, log_parser, state_reader
+from buildcrew_dash import activity_reader, backlog_reader, log_parser, manifest_reader, state_reader
 from buildcrew_dash import stop_control
 
 
@@ -113,7 +113,12 @@ class IndexScreen(Screen):
                     and state.phase_status == "running"):
                 phase = f"{state.phase} T{activity.turn}/{activity.max_turns}"
             if state.phase == "batch":
-                task = f"Batch: {state.total_tasks} tasks (parallel)"
+                batch = manifest_reader.read(instance.project_path)
+                if batch is not None:
+                    parts = batch.summary_parts(rich=True)
+                    task = f"Batch: {', '.join(parts)}" if parts else f"Batch: {batch.total} tasks"
+                else:
+                    task = f"Batch: {state.total_tasks} tasks (parallel)"
             else:
                 task_name = state.task_name
                 words = task_name.split()

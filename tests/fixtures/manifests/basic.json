@@ -1,0 +1,42 @@
+{
+  "batch_id": "20240101-120000",
+  "base_branch": "main",
+  "base_commit": "abc123def456",
+  "max_parallel": 5,
+  "started_at": "2024-01-01T12:00:00",
+  "tasks": [
+    {
+      "index": 1,
+      "text": "Add user authentication",
+      "slug": "add-user-authentication",
+      "branch": "buildcrew/add-user-authentication",
+      "worktree": ".buildcrew/batch/worktrees/add-user-authentication",
+      "status": "completed",
+      "exit_code": 0,
+      "started_at": "2024-01-01T12:00:01",
+      "completed_at": "2024-01-01T12:05:30"
+    },
+    {
+      "index": 2,
+      "text": "Fix database connection pooling",
+      "slug": "fix-database-connection-pooling",
+      "branch": "buildcrew/fix-database-connection-pooling",
+      "worktree": ".buildcrew/batch/worktrees/fix-database-connection-pooling",
+      "status": "running",
+      "exit_code": null,
+      "started_at": "2024-01-01T12:00:02",
+      "completed_at": null
+    },
+    {
+      "index": 3,
+      "text": "Update API documentation",
+      "slug": "update-api-documentation",
+      "branch": "buildcrew/update-api-documentation",
+      "worktree": ".buildcrew/batch/worktrees/update-api-documentation",
+      "status": "pending",
+      "exit_code": null,
+      "started_at": null,
+      "completed_at": null
+    }
+  ]
+}
