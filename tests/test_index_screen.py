@@ -1250,3 +1250,42 @@ async def test_action_toggle_stop_queued_row(tmp_path):
             screen.action_toggle_stop()
             mock_req.assert_called_once_with(inst.project_path)
             assert "Stop requested" in notified
+
+
+# ---------------------------------------------------------------------------
+# Batch mode tests
+# ---------------------------------------------------------------------------
+
+
+def test_batch_mode_task_and_budget():
+    """Batch mode: task cell shows 'Batch: N tasks (parallel)' and budget is '—'."""
+    screen = IndexScreen()
+    inst = _make_instance()
+    state = _make_state(phase="batch", task_num=0, total_tasks=5)
+    with patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=_make_log_summary()), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None):
+        project, _, phase, task, duration, health, budget, _ = screen._compute_cells(inst)
+    assert task == "Batch: 5 tasks (parallel)"
+    assert budget == "—"
+    assert phase == "batch"
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_mode_no_queued_rows():
+    """Batch mode: no queued rows are shown in the index table."""
+    inst = _make_instance()
+    state = _make_state(phase="batch", task_num=0, total_tasks=3)
+    log_summary = _make_log_summary()
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=["task-a", "task-b", "task-c"]), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None), \
+         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False):
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            from textual.widgets import DataTable  # noqa: PLC0415
+            table = pilot.app.screen.query_one(DataTable)
+            # Only the active row; no queued rows
+            assert table.row_count == 1, f"Expected 1 row, got {table.row_count}"

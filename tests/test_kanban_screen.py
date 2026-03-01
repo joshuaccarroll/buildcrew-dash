@@ -1370,3 +1370,62 @@ def test_stop07_action_toggle_stop_notifies_on_oserror(tmp_path):
     ):
         screen.action_toggle_stop()  # must not raise
         mock_notify.assert_called_once_with("Stop failed: disk full")
+
+
+# ---------------------------------------------------------------------------
+# Batch mode tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_mode_kanban_area_hidden(tmp_path):
+    """Batch mode: kanban area is hidden."""
+    inst = _make_instance(str(tmp_path))
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=_make_state(phase="batch", task_num=0, total_tasks=5)),
+        patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()),
+        patch("buildcrew_dash.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            assert screen.query_one("#kanban-area").display is False
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_mode_log_panel_expanded(tmp_path):
+    """Batch mode: log panel is expanded (not collapsed)."""
+    from textual.widgets import Collapsible  # noqa: PLC0415
+
+    inst = _make_instance(str(tmp_path))
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=_make_state(phase="batch", task_num=0, total_tasks=5)),
+        patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()),
+        patch("buildcrew_dash.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            assert screen.query_one("#log-panel", Collapsible).collapsed is False
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_mode_header_text(tmp_path):
+    """Batch mode: task header shows 'Batch: N tasks (parallel)'."""
+    inst = _make_instance(str(tmp_path))
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=_make_state(phase="batch", task_num=0, total_tasks=5)),
+        patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()),
+        patch("buildcrew_dash.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            header = screen.query_one("#task-header", Static)
+            assert str(header.content) == "Batch: 5 tasks (parallel)"

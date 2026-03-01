@@ -147,13 +147,16 @@ class KanbanScreen(Screen):
 
             # Update task header
             if state is not None:
-                header_text = f"Task {state.task_num}/{state.total_tasks}: {state.task_name[:50]}"
-                if (state.phase_status == "running" and activity is not None
-                        and int(time.time()) - activity.timestamp < 30):
-                    header_text += (
-                        f"  · Turn {activity.turn}/{activity.max_turns}"
-                        f" · {activity.tool}: {activity.tool_input[:30]}"
-                    )
+                if state.phase == "batch":
+                    header_text = f"Batch: {state.total_tasks} tasks (parallel)"
+                else:
+                    header_text = f"Task {state.task_num}/{state.total_tasks}: {state.task_name[:50]}"
+                    if (state.phase_status == "running" and activity is not None
+                            and int(time.time()) - activity.timestamp < 30):
+                        header_text += (
+                            f"  · Turn {activity.turn}/{activity.max_turns}"
+                            f" · {activity.tool}: {activity.tool_input[:30]}"
+                        )
             else:
                 header_text = ""
             if stop_control.is_stop_pending(self.instance.project_path):
@@ -194,10 +197,21 @@ class KanbanScreen(Screen):
                     else:  # "active"
                         sym = "⏸" if (state is not None and state.phase_status == "awaiting_input") else "●"
                 parts.append(f"{sym} {phase_label}")
-            self.query_one("#phase-strip", Static).update(" → ".join(parts))
+            if state is not None and state.phase == "batch":
+                self.query_one("#phase-strip", Static).update("● batch")
+            else:
+                self.query_one("#phase-strip", Static).update(" → ".join(parts))
 
             # Discovery mode: hide kanban area, show log
             if state is not None and state.phase == "discovery":
+                self.query_one("#kanban-area").display = False
+                self.query_one("#log-panel", Collapsible).collapsed = False
+                log_widget = self.query_one("#log-widget", Log)
+                log_widget.clear()
+                log_widget.write_lines(log_summary.recent_lines)
+                return
+            # Batch mode: hide kanban area, show log
+            elif state is not None and state.phase == "batch":
                 self.query_one("#kanban-area").display = False
                 self.query_one("#log-panel", Collapsible).collapsed = False
                 log_widget = self.query_one("#log-widget", Log)

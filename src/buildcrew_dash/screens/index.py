@@ -66,10 +66,12 @@ class IndexScreen(Screen):
                     try:
                         active_key = f"{str(instance.log_path)}::active"
                         desired[active_key] = self._compute_cells(instance)
-                        pending = backlog_reader.read_pending_tasks(instance.project_path)
-                        for n, task in enumerate(pending[1:]):
-                            queued_key = f"{str(instance.log_path)}::queued::{n}"
-                            desired[queued_key] = self._compute_queued_cells(instance, task)
+                        _state = state_reader.read(instance.project_path / ".buildcrew" / ".workflow-state")
+                        if _state is None or _state.phase != "batch":
+                            pending = backlog_reader.read_pending_tasks(instance.project_path)
+                            for n, task in enumerate(pending[1:]):
+                                queued_key = f"{str(instance.log_path)}::queued::{n}"
+                                desired[queued_key] = self._compute_queued_cells(instance, task)
                     except Exception:
                         prefix = f"{str(instance.log_path)}::"
                         for k in list(desired.keys()):
@@ -110,10 +112,13 @@ class IndexScreen(Screen):
                     and int(time.time()) - activity.timestamp < 30
                     and state.phase_status == "running"):
                 phase = f"{state.phase} T{activity.turn}/{activity.max_turns}"
-            task_name = state.task_name
-            words = task_name.split()
-            first_words = " ".join(words[:4])
-            task = f"Task {state.task_num}/{state.total_tasks}: {first_words}..."
+            if state.phase == "batch":
+                task = f"Batch: {state.total_tasks} tasks (parallel)"
+            else:
+                task_name = state.task_name
+                words = task_name.split()
+                first_words = " ".join(words[:4])
+                task = f"Task {state.task_num}/{state.total_tasks}: {first_words}..."
             if state.phase_status == "awaiting_input":
                 health = "[yellow]⏸[/yellow]"
             elif state.phase_status == "permission_denied":
@@ -128,7 +133,7 @@ class IndexScreen(Screen):
                     health = "[yellow]●[/yellow]"
                 else:
                     health = "[red]●[/red]"
-            if state.phase == "discovery":
+            if state.phase in {"discovery", "batch"}:
                 budget = "—"
             else:
                 budget = f"{state.display_invocation_count}/{state.max_invocations}"
