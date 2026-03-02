@@ -64,7 +64,10 @@ def parse(log_path: Path) -> LogSummary:
         ts_str = line[1:bracket_end]
         content = line[bracket_end + 2:]
 
-        ts = datetime.fromisoformat(ts_str)
+        try:
+            ts = datetime.fromisoformat(ts_str)
+        except ValueError:
+            continue
 
         if not start_time_found and "BuildCrew started (PID=" in content:
             start_time = ts
