@@ -98,11 +98,10 @@ def test_hp03_init_creates_process_monitor():
     assert isinstance(screen._monitor._scanner, ProcessScanner)
 
 
-def test_hp04_bindings_includes_all_three_keys():
-    """HP-04: BINDINGS contains keys for enter, right, and q."""
+def test_hp04_bindings_includes_expected_keys():
+    """HP-04: BINDINGS contains keys for right and q. Enter is handled via DataTable.RowSelected."""
     keys = {b[0] for b in IndexScreen.BINDINGS}
     assert "q" in keys
-    assert "enter" in keys
     assert "right" in keys
 
 

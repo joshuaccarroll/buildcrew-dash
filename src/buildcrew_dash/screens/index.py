@@ -13,7 +13,6 @@ from buildcrew_dash import stop_control
 
 class IndexScreen(Screen):
     BINDINGS = [
-        ("enter", "open", "Open"),
         ("right", "open", "Open"),
         ("q", "quit", "Quit"),
         ("s", "toggle_stop", "Stop/Cancel"),
@@ -181,6 +180,9 @@ class IndexScreen(Screen):
         else:
             status = ""
         return (project, mode, phase, task, duration, health, budget, status)
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        self.action_open()
 
     def action_open(self) -> None:
         table = self.query_one(DataTable)
