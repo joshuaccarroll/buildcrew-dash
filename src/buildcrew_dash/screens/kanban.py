@@ -40,6 +40,26 @@ BATCH_COLUMNS = [
 ]
 
 
+def _format_phase_duration(seconds: int) -> str:
+    """Return compact duration: '<1m', 'Nm', 'NhMMm'. Floor division, negative→'<1m'."""
+    if seconds < 60:
+        return "<1m"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    return f"{seconds // 3600}h{(seconds % 3600) // 60:02d}m"
+
+
+def _phase_duration_label(rec, now: datetime | None = None) -> str:
+    """Return formatted duration string for a PhaseRecord, or '' if timestamps missing."""
+    if rec.started_at is None:
+        return ""
+    if rec.status in ("complete", "failed") and rec.ended_at is not None:
+        return f" {_format_phase_duration(int((rec.ended_at - rec.started_at).total_seconds()))}"
+    if rec.status not in ("complete", "failed", "skipped"):
+        return f" {_format_phase_duration(int(((now or datetime.now()) - rec.started_at).total_seconds()))}"
+    return ""
+
+
 class KanbanScreen(Screen):
     BINDINGS = [
         ("escape", "app.pop_screen", "Back"),
@@ -277,7 +297,12 @@ class KanbanScreen(Screen):
                         sym = "-"
                     else:  # "active"
                         sym = "⏸" if (state is not None and state.phase_status == "awaiting_input") else "●"
-                parts.append(f"{sym} {phase_label}")
+                label = f"{sym} {phase_label}"
+                if rec is not None:
+                    label += _phase_duration_label(rec)
+                if sym in ("●", "⏸") and activity is not None and int(time.time()) - activity.timestamp < 30 and activity.turn > 0:
+                    label += f" T{activity.turn}/{activity.max_turns}"
+                parts.append(label)
             if state is None or state.phase != "batch":
                 self.query_one("#phase-strip", Static).update(" → ".join(parts))
 

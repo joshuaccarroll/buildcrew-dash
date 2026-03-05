@@ -457,14 +457,20 @@ async def test_edge04_empty_state_shows_message_and_hides_table():
 
 
 def test_edge05_kanban_not_imported_at_module_level():
-    """EDGE-05: 'kanban' import is deferred inside action_open, not at module top level."""
+    """EDGE-05: KanbanScreen import is deferred inside action_open, not at module top level.
+
+    _format_phase_duration is allowed at top level (AC-13).
+    """
     import buildcrew_dash.screens.index as idx_module  # noqa: PLC0415
     source = inspect.getsource(idx_module)
     lines = source.splitlines()
     for i, line in enumerate(lines):
         stripped = line.strip()
         if "kanban" in stripped and "import" in stripped:
-            # Any kanban import must be inside an indented block
+            # _format_phase_duration is allowed at module top level (AC-13)
+            if "_format_phase_duration" in stripped:
+                continue
+            # KanbanScreen import must be inside an indented block
             assert line.startswith((" ", "\t")), (
                 f"kanban import at module top level (line {i + 1}): {line!r}"
             )

@@ -1,5 +1,5 @@
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -9,6 +9,7 @@ from textual.widgets import DataTable, Footer, Static
 from buildcrew_dash.scanner import ProcessMonitor, ProcessScanner
 from buildcrew_dash import activity_reader, backlog_reader, log_parser, manifest_reader, state_reader
 from buildcrew_dash import stop_control
+from buildcrew_dash.screens.kanban import _format_phase_duration
 
 
 class IndexScreen(Screen):
@@ -107,10 +108,19 @@ class IndexScreen(Screen):
             mode = "auto" if state.auto_mode else "—"
             phase = state.phase
             activity = activity_reader.read(instance.project_path / ".buildcrew" / ".agent-activity")
+            if hasattr(log_summary, 'phases') and isinstance(log_summary.phases, list):
+                for rec in reversed(log_summary.phases):
+                    if rec.name == state.phase and rec.task_num == state.task_num and rec.started_at is not None:
+                        if rec.ended_at is None:
+                            secs = int((datetime.now() - rec.started_at).total_seconds())
+                        else:
+                            secs = int((rec.ended_at - rec.started_at).total_seconds())
+                        phase = f"{state.phase} {_format_phase_duration(secs)}"
+                        break
             if (activity is not None and activity.turn > 0
                     and int(time.time()) - activity.timestamp < 30
                     and state.phase_status == "running"):
-                phase = f"{state.phase} T{activity.turn}/{activity.max_turns}"
+                phase = f"{phase} T{activity.turn}/{activity.max_turns}"
             if state.phase == "batch":
                 batch = manifest_reader.read(instance.project_path)
                 if batch is not None:

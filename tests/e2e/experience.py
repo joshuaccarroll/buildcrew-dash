@@ -1318,3 +1318,33 @@ def test_is_adv01_action_toggle_stop_empty_table_noop(tmp_path):
 
     mock_req.assert_not_called()
     screen.notify.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Phase duration formatter (EH-01..EH-04)
+# ---------------------------------------------------------------------------
+
+
+def test_eh_pd01_format_phase_duration_importable():
+    """EH-01: _format_phase_duration is importable from kanban module."""
+    from buildcrew_dash.screens.kanban import _format_phase_duration  # noqa: PLC0415
+    assert callable(_format_phase_duration)
+
+
+def test_eh_pd02_format_phase_duration_returns_str_all_branches():
+    """EH-02: _format_phase_duration returns str for sub-minute, minute, and hour branches."""
+    from buildcrew_dash.screens.kanban import _format_phase_duration  # noqa: PLC0415
+    assert isinstance(_format_phase_duration(0), str)        # sub-minute
+    assert isinstance(_format_phase_duration(120), str)      # minute
+    assert isinstance(_format_phase_duration(3661), str)     # hour
+    assert _format_phase_duration(0) == "<1m"
+    assert _format_phase_duration(120) == "2m"
+    assert _format_phase_duration(3661) == "1h01m"
+
+
+def test_eh_pd04_format_phase_duration_giant_int():
+    """EH-04: _format_phase_duration handles adversarially large input without crash."""
+    from buildcrew_dash.screens.kanban import _format_phase_duration  # noqa: PLC0415
+    result = _format_phase_duration(10**9)
+    assert isinstance(result, str)
+    assert result == "277777h46m"
