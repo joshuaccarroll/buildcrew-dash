@@ -15,7 +15,7 @@ Built with [Textual](https://textual.textualize.io/).
 - Stop/cancel control per process
 
 **Kanban Screen** — detailed phase-by-phase view for a single process:
-- Row-based table with 10 columns: `TODO → SPEC → RESEARCH → REVIEW → BUILD → CODEREVIEW → TEST → OUTCOME → VERIFY → COMPLETE`
+- Row-based table with 10 columns: `TODO → SPEC → RESEARCH → REVIEW → TDD-SCAFFOLD → BUILD → SIMPLIFY → CODEREVIEW → VERIFY → COMPLETE`
 - Each row is a task; cells show phase status with color-coded verdicts (green checkmark for passed, red X for failed, dimmed dash for skipped)
 - Phase strip showing progression across all phases
 - Collapsible log tail panel (last 20 lines, auto-scrolling)

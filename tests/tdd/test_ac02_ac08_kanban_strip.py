@@ -131,10 +131,10 @@ def _get_strip_segment(pilot, phase_name: str) -> str:
 async def test_AC02_completed_phase_with_timestamps_shows_duration(tmp_path):
     """AC-02/AC-15a: Completed phase with started_at/ended_at 120s apart → '✓ build 2m'."""
     inst = _make_instance(str(tmp_path))
-    state = _make_state(phase="test", phase_status="running")
+    state = _make_state(phase="simplify", phase_status="running")
     phases = [
         PhaseRecord(name="build", status="complete", started_at=FIXED_START, ended_at=FIXED_END_120S, task_num=1),
-        PhaseRecord(name="test", status="active", task_num=1),
+        PhaseRecord(name="simplify", status="active", task_num=1),
     ]
     log_summary = _make_log_summary(phases=phases)
 
@@ -164,10 +164,10 @@ async def test_AC02_completed_phase_with_timestamps_shows_duration(tmp_path):
 async def test_AC02_failed_phase_with_timestamps_shows_duration(tmp_path):
     """AC-02/AC-15b: Failed phase with timestamps 90s apart → '✗ build 1m'."""
     inst = _make_instance(str(tmp_path))
-    state = _make_state(phase="test", phase_status="running")
+    state = _make_state(phase="simplify", phase_status="running")
     phases = [
         PhaseRecord(name="build", status="failed", started_at=FIXED_START, ended_at=FIXED_END_90S, task_num=1),
-        PhaseRecord(name="test", status="active", task_num=1),
+        PhaseRecord(name="simplify", status="active", task_num=1),
     ]
     log_summary = _make_log_summary(phases=phases)
 
@@ -321,10 +321,10 @@ async def test_AC06_active_phase_with_stale_activity_no_turn(tmp_path):
 async def test_AC07_skipped_phase_no_duration(tmp_path):
     """AC-07/AC-15g: Skipped phase → '- build'."""
     inst = _make_instance(str(tmp_path))
-    state = _make_state(phase="test", phase_status="running")
+    state = _make_state(phase="simplify", phase_status="running")
     phases = [
         PhaseRecord(name="build", status="skipped", task_num=1),
-        PhaseRecord(name="test", status="active", task_num=1),
+        PhaseRecord(name="simplify", status="active", task_num=1),
     ]
     log_summary = _make_log_summary(phases=phases)
 
@@ -348,7 +348,7 @@ async def test_AC07_skipped_phase_no_duration(tmp_path):
 
 @pytest.mark.anyio(backends=["asyncio"])
 async def test_AC07_future_phase_no_duration(tmp_path):
-    """AC-07/AC-15h: Future/unknown phase with no record and not matching state.phase → '○ test'."""
+    """AC-07/AC-15h: Future/unknown phase with no record and not matching state.phase → '○ codereview'."""
     inst = _make_instance(str(tmp_path))
     state = _make_state(phase="build", phase_status="running")
     phases = [
@@ -369,5 +369,5 @@ async def test_AC07_future_phase_no_duration(tmp_path):
     ):
         async with _TddKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
-            seg = _get_strip_segment(pilot, "test")
-            assert seg == "○ test"
+            seg = _get_strip_segment(pilot, "codereview")
+            assert seg == "○ codereview"

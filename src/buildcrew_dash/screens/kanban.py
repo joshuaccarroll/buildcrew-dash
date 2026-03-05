@@ -15,21 +15,21 @@ from buildcrew_dash.manifest_reader import BatchTask
 from buildcrew_dash.scanner import BuildCrewInstance, ProcessMonitor, ProcessScanner
 
 
-PHASE_COL_IDS = frozenset({"spec", "research", "review", "build", "codereview", "test", "outcome", "verify"})
-ACTIVE_STATUSES = {"running", "awaiting_input", "permission_denied", "max_turns"}
-
 COLUMNS = [
     ("col-todo", "todo"),
     ("col-spec", "spec"),
     ("col-research", "research"),
     ("col-review", "review"),
+    ("col-tdd-scaffold", "tdd-scaffold"),
     ("col-build", "build"),
+    ("col-simplify", "simplify"),
     ("col-codereview", "codereview"),
-    ("col-test", "test"),
-    ("col-outcome", "outcome"),
     ("col-verify", "verify"),
     ("col-complete", "complete"),
 ]
+
+PHASE_COL_IDS = frozenset(label for _, label in COLUMNS if label not in ("todo", "complete"))
+ACTIVE_STATUSES = {"running", "awaiting_input", "permission_denied", "max_turns"}
 
 BATCH_COLUMNS = [
     ("batch-idx", "#"),

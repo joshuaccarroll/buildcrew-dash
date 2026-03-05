@@ -127,10 +127,10 @@ def test_hp04_columns_has_ten_entries_in_order():
         ("col-spec", "spec"),
         ("col-research", "research"),
         ("col-review", "review"),
+        ("col-tdd-scaffold", "tdd-scaffold"),
         ("col-build", "build"),
+        ("col-simplify", "simplify"),
         ("col-codereview", "codereview"),
-        ("col-test", "test"),
-        ("col-outcome", "outcome"),
         ("col-verify", "verify"),
         ("col-complete", "complete"),
     ]
@@ -140,7 +140,7 @@ def test_hp04_columns_has_ten_entries_in_order():
 def test_hp05_phase_col_ids_correct():
     """HP-05: PHASE_COL_IDS contains the 8 non-terminal phase names."""
     assert PHASE_COL_IDS == frozenset(
-        {"spec", "research", "review", "build", "codereview", "test", "outcome", "verify"}
+        {"spec", "research", "review", "tdd-scaffold", "build", "simplify", "codereview", "verify"}
     )
 
 
@@ -619,7 +619,7 @@ async def test_edge06_second_refresh_removes_old_cards_first(tmp_path):
     """EDGE-06: Second refresh_data clears DataTable and rebuilds; phase transition moves cell content."""
     inst = _make_instance(str(tmp_path))
     state_build = _make_state(task_name="task one", phase="build", task_num=1, total_tasks=1)
-    state_test = _make_state(task_name="task one", phase="test", task_num=1, total_tasks=1)
+    state_next = _make_state(task_name="task one", phase="codereview", task_num=1, total_tasks=1)
     log_summary = _make_log_summary()
 
     with (
@@ -633,18 +633,18 @@ async def test_edge06_second_refresh_removes_old_cards_first(tmp_path):
             table = screen.query_one("#task-table", DataTable)
             # First refresh: task-1 active in col-build
             assert _get_cell(table, "task-1", "col-build") == "Task 1"
-            assert _get_cell(table, "task-1", "col-test") == ""
+            assert _get_cell(table, "task-1", "col-codereview") == ""
 
-            # Second refresh with state_test
+            # Second refresh with state_next
             with (
-                patch("buildcrew_dash.state_reader.read", return_value=state_test),
+                patch("buildcrew_dash.state_reader.read", return_value=state_next),
                 patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
             ):
                 await screen.refresh_data()
                 await pilot.pause()
 
             assert _get_cell(table, "task-1", "col-build") == ""
-            assert _get_cell(table, "task-1", "col-test") == "Task 1"
+            assert _get_cell(table, "task-1", "col-codereview") == "Task 1"
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -867,7 +867,7 @@ async def test_ac05_table_columns_spec_order(tmp_path):
             keys = [k.value for k in table.columns.keys()]
             assert keys == [col_id for col_id, _ in COLUMNS]
             col_keys = list(table.columns.keys())
-            assert table.columns[col_keys[4]].label.plain == "build"
+            assert table.columns[col_keys[5]].label.plain == "build"
             assert table.columns[col_keys[0]].label.plain == "todo"
             assert table.columns[col_keys[9]].label.plain == "complete"
 
@@ -939,7 +939,7 @@ async def test_ac07_phase_status_cell_values(tmp_path):
 async def test_ac08_completed_skipped_active_phase_cells(tmp_path):
     """AC-08: Complete/skipped/active phases render correct markup in DataTable cells."""
     inst = _make_instance(str(tmp_path))
-    state = _make_state(task_num=1, total_tasks=1, phase="test", phase_status="running")
+    state = _make_state(task_num=1, total_tasks=1, phase="codereview", phase_status="running")
     log_summary = _make_log_summary(phases=[
         PhaseRecord(name="build", status="complete", verdict="looks good", task_num=1),
         PhaseRecord(name="spec", status="skipped", task_num=1),
@@ -955,7 +955,7 @@ async def test_ac08_completed_skipped_active_phase_cells(tmp_path):
             table = pilot.app.screen.query_one("#task-table", DataTable)
             assert _get_cell(table, "task-1", "col-build") == "[green]✓ looks good[/green]"
             assert _get_cell(table, "task-1", "col-spec") == "[dim]- skipped[/dim]"
-            assert _get_cell(table, "task-1", "col-test") == "Task 1"
+            assert _get_cell(table, "task-1", "col-codereview") == "Task 1"
             assert _get_cell(table, "task-1", "col-todo") == ""
             assert _get_cell(table, "task-1", "col-complete") == ""
 
@@ -1071,7 +1071,7 @@ async def test_phase_strip_content(tmp_path):
             strip = screen.query_one("#phase-strip", Static)
             text = str(strip.content)
             assert text.index("✓ spec") < text.index("● build")
-            assert text.index("● build") < text.index("○ test")
+            assert text.index("● build") < text.index("○ codereview")
             assert text.count(" → ") == 7
 
 
@@ -1485,13 +1485,13 @@ async def test_batch_mode_batch_table_shows_tasks(tmp_path):
 async def test_batch_mode_running_task_shows_phase(tmp_path):
     """Batch mode: running task shows its current phase from worktree state."""
     inst = _make_instance(str(tmp_path))
-    with _batch_patches(inst, wt_phase="test"):
+    with _batch_patches(inst, wt_phase="codereview"):
         async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             screen = pilot.app.screen
             batch_table = screen.query_one("#batch-table", DataTable)
             phase_cell = str(batch_table.get_cell("batch-1", "batch-phase"))
-            assert phase_cell == "test"
+            assert phase_cell == "codereview"
 
 
 @pytest.mark.anyio(backends=["asyncio"])

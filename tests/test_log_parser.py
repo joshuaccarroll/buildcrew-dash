@@ -14,13 +14,10 @@ def test_complete_run():
     assert result.start_time == datetime(2024, 1, 15, 10, 0, 0)
     assert len(result.phases) == 8
     assert [p.name for p in result.phases] == [
-        "spec", "research", "review", "build", "codereview", "test", "verify", "outcome"
+        "spec", "research", "review", "tdd-scaffold", "build", "simplify", "codereview", "verify"
     ]
-    for phase in result.phases[:7]:
+    for phase in result.phases:
         assert phase.status == "complete"
-    assert result.phases[7].status == "skipped"
-    assert result.phases[7].verdict is None
-    assert result.phases[7].started_at is None
     assert result.flags["skip_spec"] == "false"
     assert result.flags["branch"] == "main"
     assert len(result.flags) == 8
