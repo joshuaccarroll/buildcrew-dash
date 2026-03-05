@@ -901,7 +901,7 @@ def test_ac07_phase_shows_turn_when_fresh_running():
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
          patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity):
         cells = screen._compute_cells(inst)
-    assert cells[2] == "build T5/50"
+    assert cells[2] == "5/8 build T5/50"
 
 
 def test_ac07_no_suffix_when_turn_zero():
@@ -915,7 +915,7 @@ def test_ac07_no_suffix_when_turn_zero():
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
          patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity):
         cells = screen._compute_cells(inst)
-    assert cells[2] == "build"
+    assert cells[2] == "5/8 build"
 
 
 def test_ac08_phase_plain_when_activity_none():
@@ -928,7 +928,7 @@ def test_ac08_phase_plain_when_activity_none():
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
          patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None):
         cells = screen._compute_cells(inst)
-    assert cells[2] == "build"
+    assert cells[2] == "5/8 build"
 
 
 def test_ac08_phase_plain_when_not_running():
@@ -942,7 +942,7 @@ def test_ac08_phase_plain_when_not_running():
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
          patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity):
         cells = screen._compute_cells(inst)
-    assert cells[2] == "build"
+    assert cells[2] == "5/8 build"
 
 
 def test_ac08_phase_plain_when_stale():
@@ -956,7 +956,7 @@ def test_ac08_phase_plain_when_stale():
          patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
          patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity):
         cells = screen._compute_cells(inst)
-    assert cells[2] == "build"
+    assert cells[2] == "5/8 build"
 
 
 # ---------------------------------------------------------------------------
@@ -1343,3 +1343,59 @@ async def test_batch_mode_no_queued_rows():
             table = pilot.app.screen.query_one(DataTable)
             # Only the active row; no queued rows
             assert table.row_count == 1, f"Expected 1 row, got {table.row_count}"
+
+
+# ---------------------------------------------------------------------------
+# Master timer tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_master_timer_displays_elapsed():
+    """Master timer shows elapsed from oldest start_time across instances."""
+    inst1 = _make_instance("/tmp/proj1", log_path="/tmp/proj1/.buildcrew/logs/bc-1.log")
+    inst2 = _make_instance("/tmp/proj2", log_path="/tmp/proj2/.buildcrew/logs/bc-2.log")
+    state = _make_state(timestamp=int(time.time()) - 5)
+    # inst1 started 300s ago (oldest), inst2 started 100s ago
+    log_old = _make_log_summary(start_time_offset=300)
+    log_new = _make_log_summary(start_time_offset=100)
+
+    def fake_parse(path):
+        if "proj1" in str(path):
+            return log_old
+        return log_new
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst1, inst2]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", side_effect=fake_parse), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None), \
+         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False):
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            from textual.widgets import Static as _Static  # noqa: PLC0415
+            timer = pilot.app.screen.query_one("#master-timer", _Static)
+            content = str(timer.render())
+            assert "Elapsed:" in content
+            # Should show ~5 minutes (from the 300s-ago instance)
+            assert "0:05:0" in content
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_master_timer_blank_when_no_start_time():
+    """Master timer is empty when all instances have start_time=None."""
+    inst = _make_instance()
+    state = _make_state(timestamp=int(time.time()) - 5)
+    log_summary = _make_log_summary(start_time_offset=None)
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]), \
+         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=None), \
+         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False):
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            from textual.widgets import Static as _Static  # noqa: PLC0415
+            timer = pilot.app.screen.query_one("#master-timer", _Static)
+            assert str(timer.render()) == ""

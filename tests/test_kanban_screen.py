@@ -1520,3 +1520,44 @@ async def test_batch_mode_no_manifest_fallback(tmp_path):
             screen = pilot.app.screen
             header = screen.query_one("#task-header", Static)
             assert "Batch: 5 tasks (parallel)" in str(header.content)
+
+
+def test_sub_title_shows_project_name():
+    """KanbanScreen sub_title is initially set to the project directory name."""
+    inst = _make_instance("/tmp/my-cool-project")
+    screen = KanbanScreen(inst)
+    assert screen.sub_title == "my-cool-project"
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_sub_title_shows_elapsed_timer():
+    """After refresh, sub_title includes project name and elapsed timer."""
+    inst = _make_instance("/tmp/bc_kanban_test")
+    state = _make_state(timestamp=int(time.time()) - 5)
+    start = datetime.fromtimestamp(time.time() - 300)
+    log_summary = _make_log_summary()
+    # Override start_time to 300s ago
+    log_summary = LogSummary(
+        pid=log_summary.pid,
+        project_path=log_summary.project_path,
+        start_time=start,
+        flags=log_summary.flags,
+        phases=log_summary.phases,
+        completed_tasks=[],
+        last_write_time=datetime.now(),
+        recent_lines=log_summary.recent_lines,
+    )
+
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+        patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            sub = pilot.app.screen.sub_title
+            assert "bc_kanban_test" in sub
+            assert "·" in sub
+            assert "0:05:0" in sub

@@ -9,7 +9,7 @@ from textual.widgets import DataTable, Footer, Static
 from buildcrew_dash.scanner import ProcessMonitor, ProcessScanner
 from buildcrew_dash import activity_reader, backlog_reader, log_parser, manifest_reader, state_reader
 from buildcrew_dash import stop_control
-from buildcrew_dash.screens.kanban import _format_phase_duration
+from buildcrew_dash.screens.kanban import PHASE_ORDER, _format_phase_duration
 
 
 class IndexScreen(Screen):
@@ -24,6 +24,7 @@ class IndexScreen(Screen):
         self._monitor = ProcessMonitor(ProcessScanner())
 
     def compose(self) -> ComposeResult:
+        yield Static("", id="master-timer")
         yield DataTable(cursor_type="row")
         yield Footer()
 
@@ -47,6 +48,7 @@ class IndexScreen(Screen):
 
             if len(self._monitor._known) == 0:
                 table.display = False
+                self.query_one("#master-timer", Static).update("")
                 try:
                     empty_msg = self.query_one("#empty-msg")
                     empty_msg.display = True
@@ -95,6 +97,24 @@ class IndexScreen(Screen):
                 for k, cells in desired.items():
                     for col_key, value in zip(col_keys, cells):
                         table.update_cell(k, col_key, value)
+
+                # Update master elapsed timer from oldest start_time
+                oldest = None
+                for instance in self._monitor._known.values():
+                    try:
+                        ls = log_parser.parse(instance.log_path)
+                        if ls.start_time is not None:
+                            if oldest is None or ls.start_time < oldest:
+                                oldest = ls.start_time
+                    except Exception:
+                        pass
+                if oldest is not None:
+                    elapsed = int(time.time()) - int(oldest.timestamp())
+                    self.query_one("#master-timer", Static).update(
+                        f"Elapsed: {timedelta(seconds=elapsed)}"
+                    )
+                else:
+                    self.query_one("#master-timer", Static).update("")
         except Exception as e:
             self.notify(str(e), severity="warning")
 
@@ -121,6 +141,11 @@ class IndexScreen(Screen):
                     and int(time.time()) - activity.timestamp < 30
                     and state.phase_status == "running"):
                 phase = f"{phase} T{activity.turn}/{activity.max_turns}"
+            try:
+                idx = PHASE_ORDER.index(state.phase)
+                phase = f"{idx + 1}/{len(PHASE_ORDER)} {phase}"
+            except ValueError:
+                pass
             if state.phase == "batch":
                 batch = manifest_reader.read(instance.project_path)
                 if batch is not None:

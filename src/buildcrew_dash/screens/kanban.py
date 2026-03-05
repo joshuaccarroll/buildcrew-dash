@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from textual.app import ComposeResult
@@ -29,6 +29,7 @@ COLUMNS = [
 ]
 
 PHASE_COL_IDS = frozenset(label for _, label in COLUMNS if label not in ("todo", "complete"))
+PHASE_ORDER = tuple(label for _, label in COLUMNS if label not in ("todo", "complete"))
 ACTIVE_STATUSES = {"running", "awaiting_input", "permission_denied", "max_turns"}
 
 BATCH_COLUMNS = [
@@ -85,6 +86,7 @@ class KanbanScreen(Screen):
         self._exited: bool = False
         self._monitor = ProcessMonitor(ProcessScanner())
         super().__init__()
+        self.sub_title = instance.project_path.name
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -232,6 +234,7 @@ class KanbanScreen(Screen):
                 self.query_one("#task-header", Static).update("")
                 self.query_one("#auto-badge", Static).update("")
                 self.query_one("#phase-strip", Static).update("")
+                self.sub_title = ""
                 self.set_timer(3.0, self.app.pop_screen)
                 return
 
@@ -243,6 +246,11 @@ class KanbanScreen(Screen):
             activity = activity_reader.read(self.instance.project_path / ".buildcrew" / ".agent-activity")
 
             log_summary = log_parser.parse(self.instance.log_path)
+
+            # Update sub_title with elapsed timer
+            if log_summary.start_time is not None:
+                elapsed = int(time.time()) - int(log_summary.start_time.timestamp())
+                self.sub_title = f"{self.instance.project_path.name} · {timedelta(seconds=elapsed)}"
 
             # Update task header (batch mode sets its own header in the batch branch below)
             if state is not None:
