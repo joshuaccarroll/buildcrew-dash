@@ -1,0 +1,16 @@
+{
+    "timestamp": "2026-03-05T12:00:00Z",
+    "status": "fail",
+    "build_iteration": 2,
+    "total": 4,
+    "passed": 2,
+    "failed": 1,
+    "errored": 1,
+    "disputed": 0,
+    "scenarios": [
+        {"scenario": "User creates a new project", "status": "pass", "summary": "Created project with config"},
+        {"scenario": "User adds task to backlog", "status": "pass", "summary": "Task appended to BACKLOG.md"},
+        {"scenario": "User runs buildcrew on project", "status": "fail", "summary": "Build phase timed out"},
+        {"scenario": "Error handling for bad input", "status": "error", "summary": "Command not found in PATH"}
+    ]
+}

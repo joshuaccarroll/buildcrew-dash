@@ -305,10 +305,11 @@ def test_edge08_index_multiple_matching_records_last_wins():
         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=stale_activity),
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
-    assert cells[2] == "build 5m"
+    assert cells[2] == "5/8 build 5m"
 
 
 # ---------------------------------------------------------------------------
@@ -336,10 +337,11 @@ def test_edge09_index_task_num_mismatch():
         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=stale_activity),
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
-    assert cells[2] == "build"
+    assert cells[2] == "5/8 build"
 
 
 # ---------------------------------------------------------------------------
@@ -365,10 +367,11 @@ def test_edge10_index_phases_is_none():
         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=stale_activity),
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
-    assert cells[2] == "build"
+    assert cells[2] == "5/8 build"
 
 
 # ---------------------------------------------------------------------------
@@ -400,10 +403,11 @@ def test_edge12_index_turn_zero():
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.datetime", mock_dt),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
-    assert cells[2] == "build 25m"
+    assert cells[2] == "5/8 build 25m"
 
 
 # ---------------------------------------------------------------------------
@@ -435,10 +439,11 @@ def test_edge14_index_awaiting_input_no_turn_info():
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.datetime", mock_dt),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
-    assert cells[2] == "build 25m"
+    assert cells[2] == "5/8 build 25m"
 
 
 # ---------------------------------------------------------------------------
@@ -464,8 +469,9 @@ def test_adv04_index_phases_is_int():
         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity),
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
     # Guard skips duration lookup; fresh activity adds turn info
-    assert cells[2] == "build T15/60"
+    assert cells[2] == "5/8 build T15/60"

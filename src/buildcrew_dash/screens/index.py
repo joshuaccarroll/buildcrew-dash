@@ -7,7 +7,7 @@ from textual.screen import Screen
 from textual.widgets import DataTable, Footer, Static
 
 from buildcrew_dash.scanner import ProcessMonitor, ProcessScanner
-from buildcrew_dash import activity_reader, backlog_reader, log_parser, manifest_reader, state_reader
+from buildcrew_dash import activity_reader, backlog_reader, log_parser, manifest_reader, state_reader, uat_reader
 from buildcrew_dash import stop_control
 from buildcrew_dash.screens.kanban import PHASE_ORDER, _format_phase_duration
 
@@ -172,6 +172,9 @@ class IndexScreen(Screen):
                     health = "[yellow]●[/yellow]"
                 else:
                     health = "[red]●[/red]"
+            uat_state = uat_reader.read_state(instance.project_path)
+            if uat_state is not None:
+                phase += f" [UAT {uat_state.phase}]"
             if state.phase in {"discovery", "batch"}:
                 budget = "—"
             else:

@@ -9,7 +9,7 @@ from textual.screen import Screen
 from textual.widgets import Collapsible, DataTable, Footer, Header, Log, Static
 from textual.containers import ScrollableContainer
 
-from buildcrew_dash import activity_reader, log_parser, manifest_reader, state_reader
+from buildcrew_dash import activity_reader, log_parser, manifest_reader, state_reader, uat_reader
 from buildcrew_dash import stop_control
 from buildcrew_dash.manifest_reader import BatchTask
 from buildcrew_dash.scanner import BuildCrewInstance, ProcessMonitor, ProcessScanner
@@ -77,6 +77,7 @@ class KanbanScreen(Screen):
         "#auto-badge { padding: 0 1; }\n"
         "#phase-strip { padding: 0 1; color: $text-muted; }\n"
         "#task-header { padding: 0 1; text-style: bold; }\n"
+        "#uat-panel { display: none; }\n"
         "#log-panel { max-height: 24; }\n"
         "#log-widget { height: 20; }"
     )
@@ -97,6 +98,9 @@ class KanbanScreen(Screen):
             yield DataTable(id="task-table", cursor_type="none")
         with ScrollableContainer(id="batch-area"):
             yield DataTable(id="batch-table", cursor_type="none")
+        with Collapsible(title="UAT", id="uat-panel", collapsed=False):
+            yield Static("", id="uat-header")
+            yield Static("", id="uat-scenarios")
         with Collapsible(title="Log", id="log-panel", collapsed=True):
             yield Log(id="log-widget")
         yield Footer()
@@ -226,17 +230,21 @@ class KanbanScreen(Screen):
             added, removed = await self._monitor.poll()
 
             if self.instance.log_path in [r.log_path for r in removed] and not self._exited:
-                self._exited = True
-                await self.query_one("#kanban-area").remove_children()
-                self.query_one("#kanban-area").display = False
-                self.query_one("#batch-area").display = False
-                await self.mount(Static("Process exited", id="exit-banner"), before="#log-panel")
-                self.query_one("#task-header", Static).update("")
-                self.query_one("#auto-badge", Static).update("")
-                self.query_one("#phase-strip", Static).update("")
-                self.sub_title = ""
-                self.set_timer(3.0, self.app.pop_screen)
-                return
+                # Check if UAT is running — process may just be in the UAT workdir
+                uat_state_check = uat_reader.read_state(self.instance.project_path)
+                if uat_state_check is None:
+                    self._exited = True
+                    await self.query_one("#kanban-area").remove_children()
+                    self.query_one("#kanban-area").display = False
+                    self.query_one("#batch-area").display = False
+                    self.query_one("#uat-panel").display = False
+                    await self.mount(Static("Process exited", id="exit-banner"), before="#uat-panel")
+                    self.query_one("#task-header", Static).update("")
+                    self.query_one("#auto-badge", Static).update("")
+                    self.query_one("#phase-strip", Static).update("")
+                    self.sub_title = ""
+                    self.set_timer(3.0, self.app.pop_screen)
+                    return
 
             try:
                 state = state_reader.read(self.instance.project_path / ".buildcrew" / ".workflow-state")
@@ -311,8 +319,57 @@ class KanbanScreen(Screen):
                 if sym in ("●", "⏸") and activity is not None and int(time.time()) - activity.timestamp < 30 and activity.turn > 0:
                     label += f" T{activity.turn}/{activity.max_turns}"
                 parts.append(label)
+            # Read UAT state and verdict
+            uat_state = uat_reader.read_state(self.instance.project_path)
+            verdict = None
+            if uat_state is not None and uat_state.phase in ("failed", "complete", "verdict"):
+                verdict = uat_reader.read_verdict(uat_state.project_name)
+
+            # Append UAT segment to phase strip
+            if uat_state is not None:
+                if uat_state.status == "pass" or uat_state.phase == "complete":
+                    uat_sym = "✓"
+                elif uat_state.status in ("fail", "error") or uat_state.phase == "failed":
+                    uat_sym = "✗"
+                else:
+                    uat_sym = "●"
+                uat_label = f"{uat_sym} UAT {uat_state.phase}"
+                if verdict is not None and verdict.total > 0:
+                    uat_label += f" {verdict.passed}/{verdict.total}"
+                parts.append(uat_label)
+
             if state is None or state.phase != "batch":
                 self.query_one("#phase-strip", Static).update(" → ".join(parts))
+
+            # Update UAT panel
+            if uat_state is not None:
+                self.query_one("#uat-panel").display = True
+                self.query_one("#uat-header", Static).update(
+                    f"UAT — {uat_state.phase} — Iteration {uat_state.iteration}"
+                )
+                if verdict is not None:
+                    scenario_lines = []
+                    for s in verdict.scenarios:
+                        st = s.get("status", "")
+                        name = s.get("scenario", "")
+                        summary = s.get("summary", "")
+                        if st == "pass":
+                            scenario_lines.append(f"[green]✓[/green] {name} — {summary}")
+                        elif st == "fail":
+                            scenario_lines.append(f"[red]✗[/red] {name} — {summary}")
+                        elif st == "error":
+                            scenario_lines.append(f"[yellow]![/yellow] {name} — {summary}")
+                        elif st == "disputed":
+                            scenario_lines.append(f"[cyan]?[/cyan] {name} — {summary}")
+                        else:
+                            scenario_lines.append(f"  {name} — {summary}")
+                    summary_line = f"{verdict.total} scenarios: {verdict.passed} passed, {verdict.failed} failed, {verdict.errored} error"
+                    scenario_lines.append(summary_line)
+                    self.query_one("#uat-scenarios", Static).update("\n".join(scenario_lines))
+                else:
+                    self.query_one("#uat-scenarios", Static).update("")
+            else:
+                self.query_one("#uat-panel").display = False
 
             # Discovery mode: hide kanban area, show log
             if state is not None and state.phase == "discovery":

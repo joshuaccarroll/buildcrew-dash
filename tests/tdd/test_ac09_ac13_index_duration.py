@@ -115,10 +115,11 @@ def test_AC09_active_phase_record_fresh_activity_shows_duration_and_turn():
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.datetime", mock_dt),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
-    assert cells[2] == "build 25m T15/60"
+    assert cells[2] == "5/8 build 25m T15/60"
 
 
 # ---------------------------------------------------------------------------
@@ -150,10 +151,11 @@ def test_AC09_active_phase_record_stale_activity_shows_duration_only():
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.datetime", mock_dt),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
-    assert cells[2] == "build 25m"
+    assert cells[2] == "5/8 build 25m"
 
 
 # ---------------------------------------------------------------------------
@@ -178,10 +180,11 @@ def test_AC10_no_matching_record_fresh_activity_shows_turn_only():
         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity),
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
-    assert cells[2] == "build T15/60"
+    assert cells[2] == "5/8 build T15/60"
 
 
 # ---------------------------------------------------------------------------
@@ -206,10 +209,11 @@ def test_AC10_no_matching_record_stale_activity_shows_phase_only():
         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=stale_activity),
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
-    assert cells[2] == "build"
+    assert cells[2] == "5/8 build"
 
 
 # ---------------------------------------------------------------------------
@@ -236,8 +240,9 @@ def test_AC11_guard_prevents_crash_on_mock_without_phases():
         patch("buildcrew_dash.screens.index.activity_reader.read", return_value=activity),
         patch("buildcrew_dash.screens.index.time", mock_time),
         patch("buildcrew_dash.screens.index.stop_control.is_stop_pending", return_value=False),
+        patch("buildcrew_dash.screens.index.uat_reader.read_state", return_value=None),
     ):
         cells = screen._compute_cells(inst)
 
     # Guard skips duration lookup; fresh activity still adds turn info
-    assert cells[2] == "build T15/60"
+    assert cells[2] == "5/8 build T15/60"
