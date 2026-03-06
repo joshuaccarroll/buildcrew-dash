@@ -152,7 +152,7 @@ async def test_AC02_completed_phase_with_timestamps_shows_duration(tmp_path):
         async with _TddKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "build")
-            assert seg == "✓ build 2m"
+            assert seg == "✓ 5/8 build 2m"
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ async def test_AC02_failed_phase_with_timestamps_shows_duration(tmp_path):
         async with _TddKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "build")
-            assert seg == "✗ build 1m"
+            assert seg == "✗ 5/8 build 1m"
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +217,7 @@ async def test_AC03_active_phase_with_record_shows_live_duration(tmp_path):
         async with _TddKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "build")
-            assert seg == "● build 12m"
+            assert seg == "● 5/8 build 12m"
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +243,7 @@ async def test_AC04_active_phase_without_record_no_duration(tmp_path):
         async with _TddKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "build")
-            assert seg == "● build"
+            assert seg == "● 5/8 build"
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +276,7 @@ async def test_AC05_active_phase_with_fresh_activity_shows_turn(tmp_path):
         async with _TddKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "build")
-            assert seg == "● build 12m T15/60"
+            assert seg == "● 5/8 build 12m T15/60"
 
 
 # ---------------------------------------------------------------------------
@@ -309,7 +309,7 @@ async def test_AC06_active_phase_with_stale_activity_no_turn(tmp_path):
         async with _TddKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "build")
-            assert seg == "● build 12m"
+            assert seg == "● 5/8 build 12m"
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +338,7 @@ async def test_AC07_skipped_phase_no_duration(tmp_path):
         async with _TddKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "build")
-            assert seg == "- build"
+            assert seg == "- 5/8 build"
 
 
 # ---------------------------------------------------------------------------
@@ -370,4 +370,4 @@ async def test_AC07_future_phase_no_duration(tmp_path):
         async with _TddKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "codereview")
-            assert seg == "○ codereview"
+            assert seg == "○ 7/8 codereview"

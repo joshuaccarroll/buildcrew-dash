@@ -242,7 +242,7 @@ async def test_edge06_kanban_strip_turn_zero(tmp_path):
         async with _EdgeKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "build")
-            assert seg == "● build 12m"
+            assert seg == "● 5/8 build 12m"
 
 
 # ---------------------------------------------------------------------------
@@ -276,7 +276,7 @@ async def test_adv02_kanban_strip_30s_boundary(tmp_path):
         async with _EdgeKanbanApp(inst).run_test(size=(200, 50)) as pilot:
             await pilot.pause()
             seg = _get_strip_segment(pilot, "build")
-            assert seg == "● build 12m"
+            assert seg == "● 5/8 build 12m"
 
 
 # ---------------------------------------------------------------------------

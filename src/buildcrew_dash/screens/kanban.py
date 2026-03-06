@@ -291,9 +291,12 @@ class KanbanScreen(Screen):
                 else log_summary.phases
             )
             parts = []
+            phase_idx = 0
+            total_phases = len(PHASE_ORDER)
             for _col_id, phase_label in COLUMNS:
                 if phase_label not in PHASE_COL_IDS:
                     continue
+                phase_idx += 1
                 rec = None
                 for r in reversed(phases_for_strip):
                     if r.name == phase_label:
@@ -313,7 +316,7 @@ class KanbanScreen(Screen):
                         sym = "-"
                     else:  # "active"
                         sym = "⏸" if (state is not None and state.phase_status == "awaiting_input") else "●"
-                label = f"{sym} {phase_label}"
+                label = f"{sym} {phase_idx}/{total_phases} {phase_label}"
                 if rec is not None:
                     label += _phase_duration_label(rec)
                 if sym in ("●", "⏸") and activity is not None and int(time.time()) - activity.timestamp < 30 and activity.turn > 0:
@@ -321,9 +324,12 @@ class KanbanScreen(Screen):
                 parts.append(label)
             # Read UAT state and verdict
             uat_state = uat_reader.read_state(self.instance.project_path)
+            project_name = self.instance.project_path.name
             verdict = None
             if uat_state is not None and uat_state.phase in ("failed", "complete", "verdict"):
                 verdict = uat_reader.read_verdict(uat_state.project_name)
+            elif uat_state is None:
+                verdict = uat_reader.read_verdict(project_name)
 
             # Append UAT segment to phase strip
             if uat_state is not None:
@@ -337,16 +343,25 @@ class KanbanScreen(Screen):
                 if verdict is not None and verdict.total > 0:
                     uat_label += f" {verdict.passed}/{verdict.total}"
                 parts.append(uat_label)
+            elif verdict is not None and verdict.total > 0:
+                uat_sym = "✓" if verdict.status == "pass" else "✗"
+                parts.append(f"{uat_sym} UAT {verdict.passed}/{verdict.total}")
 
             if state is None or state.phase != "batch":
                 self.query_one("#phase-strip", Static).update(" → ".join(parts))
 
             # Update UAT panel
-            if uat_state is not None:
+            if uat_state is not None or verdict is not None:
                 self.query_one("#uat-panel").display = True
-                self.query_one("#uat-header", Static).update(
-                    f"UAT — {uat_state.phase} — Iteration {uat_state.iteration}"
-                )
+                if uat_state is not None:
+                    self.query_one("#uat-header", Static).update(
+                        f"UAT — {uat_state.phase} — Iteration {uat_state.iteration}"
+                    )
+                else:
+                    uat_status = "passed" if verdict.status == "pass" else verdict.status
+                    self.query_one("#uat-header", Static).update(
+                        f"UAT — {uat_status} — Build {verdict.build_iteration}"
+                    )
                 if verdict is not None:
                     scenario_lines = []
                     for s in verdict.scenarios:
@@ -417,6 +432,9 @@ class KanbanScreen(Screen):
                     row_key = f"batch-{task.index}"
                     desired_keys.add(row_key)
                     phase = self._get_batch_task_phase(task, wt_states)
+                    if phase and phase in PHASE_ORDER:
+                        idx = PHASE_ORDER.index(phase)
+                        phase = f"{idx + 1}/{len(PHASE_ORDER)} {phase}"
                     elapsed = self._format_batch_elapsed(task, now)
                     status_cell = self._format_batch_status(task)
                     task_label = task.text[:40] + ("..." if len(task.text) > 40 else "")

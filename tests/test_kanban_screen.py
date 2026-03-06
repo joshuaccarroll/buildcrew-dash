@@ -1070,8 +1070,8 @@ async def test_phase_strip_content(tmp_path):
             screen = pilot.app.screen
             strip = screen.query_one("#phase-strip", Static)
             text = str(strip.content)
-            assert text.index("✓ spec") < text.index("● build")
-            assert text.index("● build") < text.index("○ codereview")
+            assert text.index("✓ 1/8 spec") < text.index("● 5/8 build")
+            assert text.index("● 5/8 build") < text.index("○ 7/8 codereview")
             assert text.count(" → ") == 7
 
 
@@ -1095,7 +1095,7 @@ async def test_phase_strip_awaiting_input_symbol(tmp_path):
             strip = screen.query_one("#phase-strip", Static)
             text = str(strip.content)
             assert "⏸" in text
-            assert "● build" not in text
+            assert "● 5/8 build" not in text
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -1115,7 +1115,7 @@ async def test_phase_strip_failed_symbol(tmp_path):
             screen = pilot.app.screen
             strip = screen.query_one("#phase-strip", Static)
             text = str(strip.content)
-            assert "✗ spec" in text
+            assert "✗ 1/8 spec" in text
 
 
 @pytest.mark.anyio(backends=["asyncio"])
@@ -1491,7 +1491,7 @@ async def test_batch_mode_running_task_shows_phase(tmp_path):
             screen = pilot.app.screen
             batch_table = screen.query_one("#batch-table", DataTable)
             phase_cell = str(batch_table.get_cell("batch-1", "batch-phase"))
-            assert phase_cell == "codereview"
+            assert phase_cell == "7/8 codereview"
 
 
 @pytest.mark.anyio(backends=["asyncio"])
