@@ -38,6 +38,8 @@ BATCH_COLUMNS = [
     ("batch-status", "Status"),
     ("batch-phase", "Phase"),
     ("batch-elapsed", "Elapsed"),
+    ("batch-health", "Health"),
+    ("batch-activity", "Activity"),
 ]
 
 
@@ -65,6 +67,7 @@ class KanbanScreen(Screen):
     BINDINGS = [
         ("escape", "app.pop_screen", "Back"),
         ("left", "app.pop_screen", "Back"),
+        ("q", "quit", "Quit"),
         ("s", "toggle_stop", "Stop/Cancel"),
         ("l", "toggle_log", "Log"),
     ]
@@ -177,18 +180,31 @@ class KanbanScreen(Screen):
         elif task.status == "failed":
             ec = f" ({task.exit_code})" if task.exit_code is not None else ""
             return f"[red]failed{ec}[/red]"
+        elif task.status == "verify_failed":
+            ec = f" ({task.exit_code})" if task.exit_code is not None else ""
+            return f"[red]verify failed{ec}[/red]"
+        elif task.status == "merge_conflict":
+            return "[yellow]merge conflict[/yellow]"
         elif task.status == "interrupted":
             return "[yellow]interrupted[/yellow]"
         return task.status
 
     @staticmethod
-    def _get_batch_task_phase(task: BatchTask, wt_states: dict) -> str:
+    def _get_batch_task_phase(task: BatchTask, wt_states: dict, wt_logs: dict | None = None) -> str:
         if task.status != "running":
             return ""
         wt_state = wt_states.get(task.index)
-        if wt_state is not None:
-            return wt_state.phase
-        return "starting"
+        if wt_state is None:
+            return "starting"
+        phase = wt_state.phase
+        if wt_logs and task.index in wt_logs:
+            wt_log = wt_logs[task.index]
+            for rec in reversed(wt_log.phases):
+                if rec.name == phase and rec.started_at and rec.ended_at is None:
+                    secs = int((datetime.now() - rec.started_at).total_seconds())
+                    phase = f"{phase} {_format_phase_duration(secs)}"
+                    break
+        return phase
 
     @staticmethod
     def _format_batch_elapsed(task: BatchTask, now: datetime | None = None) -> str:
@@ -216,6 +232,55 @@ class KanbanScreen(Screen):
             hours, minutes = divmod(minutes, 60)
             return f"{hours}:{minutes:02d}:{seconds:02d}"
         return f"{minutes}:{seconds:02d}"
+
+    @staticmethod
+    def _format_batch_health(task: BatchTask, wt_state, wt_activity) -> str:
+        if task.status != "running":
+            return ""
+        if wt_state is not None and wt_state.phase_status == "awaiting_input":
+            return "[yellow]pause[/yellow]"
+        if wt_activity is not None and wt_activity.timestamp > 0:
+            age = int(time.time()) - wt_activity.timestamp
+            if age < 10:
+                return "[green]●[/green]"
+            elif age <= 30:
+                return "[yellow]●[/yellow]"
+            else:
+                return "[red]●[/red]"
+        if wt_state is not None:
+            age = int(time.time()) - wt_state.timestamp
+            if age < 10:
+                return "[green]●[/green]"
+            elif age <= 30:
+                return "[yellow]●[/yellow]"
+            else:
+                return "[red]●[/red]"
+        return "[dim]…[/dim]"
+
+    @staticmethod
+    def _format_batch_activity(task: BatchTask, wt_activity) -> str:
+        if task.status != "running":
+            return ""
+        if wt_activity is None or wt_activity.timestamp == 0:
+            return ""
+        age = int(time.time()) - wt_activity.timestamp
+        if age > 30:
+            return "[dim]stale[/dim]"
+        parts = []
+        if wt_activity.tool:
+            parts.append(wt_activity.tool)
+        if wt_activity.turn > 0:
+            parts.append(f"T{wt_activity.turn}/{wt_activity.max_turns}")
+        return " ".join(parts) if parts else ""
+
+    @staticmethod
+    def _find_worktree_log(project_path: Path, worktree: str) -> Path | None:
+        log_dir = project_path / worktree / ".buildcrew" / "logs"
+        try:
+            logs = sorted(log_dir.glob("buildcrew-*.log"))
+            return logs[-1] if logs else None
+        except OSError:
+            return None
 
     def _update_log(self, log_summary) -> None:
         log_widget = self.query_one("#log-widget", Log)
@@ -411,16 +476,21 @@ class KanbanScreen(Screen):
                     self._update_log(log_summary)
                     return
 
-                # Read per-worktree state for running tasks
+                # Read per-worktree state, activity, and logs for running tasks
                 wt_states: dict = {}
+                wt_activities: dict = {}
+                wt_logs: dict = {}
                 for task in batch.tasks:
                     if task.status == "running":
+                        wt_base = Path(self.instance.project_path) / task.worktree / ".buildcrew"
                         try:
-                            wt_states[task.index] = state_reader.read(
-                                Path(self.instance.project_path) / task.worktree / ".buildcrew" / ".workflow-state"
-                            )
+                            wt_states[task.index] = state_reader.read(wt_base / ".workflow-state")
                         except (KeyError, ValueError):
                             wt_states[task.index] = None
+                        wt_activities[task.index] = activity_reader.read(wt_base / ".agent-activity")
+                        log_path = self._find_worktree_log(Path(self.instance.project_path), task.worktree)
+                        if log_path:
+                            wt_logs[task.index] = log_parser.parse(log_path)
 
                 # Update batch table (cell-update to avoid flicker)
                 batch_table = self.query_one("#batch-table", DataTable)
@@ -431,14 +501,19 @@ class KanbanScreen(Screen):
                 for task in batch.tasks:
                     row_key = f"batch-{task.index}"
                     desired_keys.add(row_key)
-                    phase = self._get_batch_task_phase(task, wt_states)
-                    if phase and phase in PHASE_ORDER:
-                        idx = PHASE_ORDER.index(phase)
+                    phase = self._get_batch_task_phase(task, wt_states, wt_logs)
+                    if phase and phase.split()[0] in PHASE_ORDER:
+                        base = phase.split()[0]
+                        idx = PHASE_ORDER.index(base)
                         phase = f"{idx + 1}/{len(PHASE_ORDER)} {phase}"
                     elapsed = self._format_batch_elapsed(task, now)
                     status_cell = self._format_batch_status(task)
                     task_label = task.text[:40] + ("..." if len(task.text) > 40 else "")
-                    cells = (str(task.index), task_label, status_cell, phase, elapsed)
+                    wt_state = wt_states.get(task.index)
+                    wt_activity = wt_activities.get(task.index)
+                    health = self._format_batch_health(task, wt_state, wt_activity)
+                    activity_cell = self._format_batch_activity(task, wt_activity)
+                    cells = (str(task.index), task_label, status_cell, phase, elapsed, health, activity_cell)
 
                     if row_key not in existing_keys:
                         batch_table.add_row(*cells, key=row_key)
@@ -466,7 +541,11 @@ class KanbanScreen(Screen):
                 if batch.running_count:
                     strip_parts.append(f"{batch.running_count} active")
                 if batch.failed_count:
-                    strip_parts.append(f"{batch.failed_count} failed")
+                    strip_parts.append(f"[red]{batch.failed_count} failed[/red]")
+                if batch.verify_failed_count:
+                    strip_parts.append(f"[red]{batch.verify_failed_count} verify failed[/red]")
+                if batch.merge_conflict_count:
+                    strip_parts.append(f"[yellow]{batch.merge_conflict_count} conflict[/yellow]")
                 if batch.interrupted_count:
                     strip_parts.append(f"{batch.interrupted_count} interrupted")
                 self.query_one("#phase-strip", Static).update("  ".join(strip_parts))
@@ -495,6 +574,9 @@ class KanbanScreen(Screen):
     def action_toggle_log(self) -> None:
         panel = self.query_one("#log-panel", Collapsible)
         panel.collapsed = not panel.collapsed
+
+    def action_quit(self) -> None:
+        self.app.exit()
 
     def action_toggle_stop(self) -> None:
         if self._exited:

@@ -17,13 +17,14 @@ Built with [Textual](https://textual.textualize.io/).
 **Kanban Screen** — detailed phase-by-phase view for a single process:
 - Row-based table with 10 columns: `TODO → SPEC → RESEARCH → REVIEW → TDD-SCAFFOLD → BUILD → SIMPLIFY → CODEREVIEW → VERIFY → COMPLETE`
 - Each row is a task; cells show phase status with color-coded verdicts (green checkmark for passed, red X for failed, dimmed dash for skipped)
-- Phase strip showing progression across all phases
+- Phase strip showing progression across all phases with elapsed durations
 - Collapsible log tail panel (last 20 lines, auto-scrolling)
+- UAT panel showing test scenarios with per-scenario pass/fail/error status
 - Auto mode badge when running with `--auto`
 
 **Special modes:**
 - **Discovery mode** — hides the kanban table and auto-expands the log panel, since discovery is an interactive PM conversation
-- **Batch mode** — shows parallel task count and log output instead of the phase grid
+- **Batch mode** — shows a parallel task table with per-task status, phase, elapsed time, health, and activity instead of the phase grid
 
 ## Prerequisites
 
@@ -63,8 +64,9 @@ Running `buildcrew-dash` auto-discovers any running `buildcrew` processes — no
 | Index | `Enter` / `→` | Open kanban for selected process |
 | Index | `s` | Stop/cancel the selected workflow |
 | Kanban | `Esc` / `←` | Back to index |
-| Kanban | `l` | Toggle log panel |
+| Kanban | `q` | Quit |
 | Kanban | `s` | Stop/cancel the workflow |
+| Kanban | `l` | Toggle log panel |
 
 ## Limitations
 

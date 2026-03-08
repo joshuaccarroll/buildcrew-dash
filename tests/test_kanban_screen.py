@@ -1406,7 +1406,7 @@ def _make_batch_manifest(**kwargs):
 _SENTINEL = object()
 
 
-def _batch_patches(inst, manifest=_SENTINEL, wt_phase="build"):
+def _batch_patches(inst, manifest=_SENTINEL, wt_phase="build", wt_activity=None, wt_phase_status="running", wt_log_summary=None):
     """Context manager with all patches needed for batch mode tests."""
     if manifest is _SENTINEL:
         manifest = _make_batch_manifest()
@@ -1414,17 +1414,35 @@ def _batch_patches(inst, manifest=_SENTINEL, wt_phase="build"):
     def mock_state_read(path):
         path_str = str(path)
         if "worktrees" in path_str:
-            return _make_state(phase=wt_phase, task_num=1, total_tasks=1)
+            return _make_state(phase=wt_phase, task_num=1, total_tasks=1, phase_status=wt_phase_status)
         return _make_state(phase="batch", task_num=0, total_tasks=5)
+
+    def mock_activity_read(path):
+        path_str = str(path)
+        if "worktrees" in path_str:
+            return wt_activity
+        return None
+
+    def mock_log_parse(path):
+        path_str = str(path)
+        if wt_log_summary is not None and ("worktrees" in path_str or "worktree" in path_str):
+            return wt_log_summary
+        return _make_log_summary()
 
     from contextlib import ExitStack  # noqa: PLC0415
     stack = ExitStack()
     stack.enter_context(patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]))
     stack.enter_context(patch("buildcrew_dash.state_reader.read", side_effect=mock_state_read))
-    stack.enter_context(patch("buildcrew_dash.log_parser.parse", return_value=_make_log_summary()))
-    stack.enter_context(patch("buildcrew_dash.activity_reader.read", return_value=None))
+    stack.enter_context(patch("buildcrew_dash.log_parser.parse", side_effect=mock_log_parse))
+    stack.enter_context(patch("buildcrew_dash.activity_reader.read", side_effect=mock_activity_read))
     stack.enter_context(patch("buildcrew_dash.stop_control.is_stop_pending", return_value=False))
     stack.enter_context(patch("buildcrew_dash.manifest_reader.read", return_value=manifest))
+    if wt_log_summary is not None:
+        # Mock _find_worktree_log to return a fake path so log parsing is triggered
+        stack.enter_context(patch.object(
+            KanbanScreen, "_find_worktree_log",
+            return_value=Path("/fake/worktree.log"),
+        ))
     return stack
 
 
@@ -1561,3 +1579,161 @@ async def test_sub_title_shows_elapsed_timer():
             assert "bc_kanban_test" in sub
             assert "·" in sub
             assert "0:05:0" in sub
+
+
+# ---------------------------------------------------------------------------
+# Batch health + activity column tests
+# ---------------------------------------------------------------------------
+
+
+def _make_activity(**kwargs):
+    from buildcrew_dash.activity_reader import AgentActivity  # noqa: PLC0415
+    defaults = dict(tool="Bash", tool_input="npm test", turn=12, max_turns=70, status="", timestamp=int(time.time()))
+    defaults.update(kwargs)
+    return AgentActivity(**defaults)
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_health_green_when_recent_activity(tmp_path):
+    """Running task with activity < 10s ago shows green dot."""
+    inst = _make_instance(str(tmp_path))
+    act = _make_activity(timestamp=int(time.time()) - 2)
+    with _batch_patches(inst, wt_activity=act):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            health = str(batch_table.get_cell("batch-1", "batch-health"))
+            assert "green" in health
+            assert "●" in health
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_health_yellow_when_stale_activity(tmp_path):
+    """Running task with activity 15s ago shows yellow dot."""
+    inst = _make_instance(str(tmp_path))
+    act = _make_activity(timestamp=int(time.time()) - 15)
+    with _batch_patches(inst, wt_activity=act):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            health = str(batch_table.get_cell("batch-1", "batch-health"))
+            assert "yellow" in health
+            assert "●" in health
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_health_red_when_very_stale(tmp_path):
+    """Running task with activity 60s ago shows red dot."""
+    inst = _make_instance(str(tmp_path))
+    act = _make_activity(timestamp=int(time.time()) - 60)
+    with _batch_patches(inst, wt_activity=act):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            health = str(batch_table.get_cell("batch-1", "batch-health"))
+            assert "red" in health
+            assert "●" in health
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_health_empty_for_non_running(tmp_path):
+    """Completed/pending tasks show empty health."""
+    inst = _make_instance(str(tmp_path))
+    with _batch_patches(inst):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            # Task 2 is completed, task 3 is pending
+            assert str(batch_table.get_cell("batch-2", "batch-health")) == ""
+            assert str(batch_table.get_cell("batch-3", "batch-health")) == ""
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_health_awaiting_input(tmp_path):
+    """Running task with awaiting_input shows pause."""
+    inst = _make_instance(str(tmp_path))
+    with _batch_patches(inst, wt_phase_status="awaiting_input"):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            health = str(batch_table.get_cell("batch-1", "batch-health"))
+            assert "pause" in health
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_activity_shows_tool_and_turns(tmp_path):
+    """Running task with fresh activity shows tool name and turn count."""
+    inst = _make_instance(str(tmp_path))
+    act = _make_activity(tool="Bash", turn=12, max_turns=70, timestamp=int(time.time()) - 2)
+    with _batch_patches(inst, wt_activity=act):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            activity = str(batch_table.get_cell("batch-1", "batch-activity"))
+            assert "Bash" in activity
+            assert "T12/70" in activity
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_activity_stale_when_old(tmp_path):
+    """Activity > 30s shows 'stale'."""
+    inst = _make_instance(str(tmp_path))
+    act = _make_activity(timestamp=int(time.time()) - 45)
+    with _batch_patches(inst, wt_activity=act):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            activity = str(batch_table.get_cell("batch-1", "batch-activity"))
+            assert "stale" in activity
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_activity_empty_for_non_running(tmp_path):
+    """Non-running tasks show empty activity."""
+    inst = _make_instance(str(tmp_path))
+    with _batch_patches(inst):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            assert str(batch_table.get_cell("batch-2", "batch-activity")) == ""
+            assert str(batch_table.get_cell("batch-3", "batch-activity")) == ""
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_phase_includes_duration(tmp_path):
+    """Phase column includes duration when worktree log has active phase."""
+    from datetime import timedelta  # noqa: PLC0415
+    inst = _make_instance(str(tmp_path))
+    # Create a log summary with a verify phase started 20 minutes ago
+    started = datetime.now() - timedelta(minutes=20)
+    wt_log = LogSummary(
+        pid=1234,
+        project_path=str(tmp_path),
+        start_time=started,
+        flags="",
+        phases=[PhaseRecord(name="verify", status="active", verdict="", task_num=1, started_at=started, ended_at=None)],
+        completed_tasks=[],
+        last_write_time=datetime.now(),
+        recent_lines=[],
+    )
+    with _batch_patches(inst, wt_phase="verify", wt_log_summary=wt_log):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            phase = str(batch_table.get_cell("batch-1", "batch-phase"))
+            assert "verify" in phase
+            assert "20m" in phase
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_batch_phase_duration_no_log(tmp_path):
+    """Phase column works gracefully without worktree log."""
+    inst = _make_instance(str(tmp_path))
+    with _batch_patches(inst, wt_phase="build"):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            batch_table = pilot.app.screen.query_one("#batch-table", DataTable)
+            phase = str(batch_table.get_cell("batch-1", "batch-phase"))
+            assert "build" in phase
+            # No duration appended
+            assert "m" not in phase.replace("build", "")

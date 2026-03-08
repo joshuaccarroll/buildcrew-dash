@@ -59,12 +59,22 @@ class BatchManifest:
     def interrupted_count(self) -> int:
         return self._status_counts.get("interrupted", 0)
 
+    @property
+    def verify_failed_count(self) -> int:
+        return self._status_counts.get("verify_failed", 0)
+
+    @property
+    def merge_conflict_count(self) -> int:
+        return self._status_counts.get("merge_conflict", 0)
+
     def summary_parts(self, rich: bool = False) -> list[str]:
         """Return non-zero status counts as formatted strings."""
         entries = [
             (self.running_count, "running", None),
             (self.completed_count, "done", "green" if rich else None),
             (self.failed_count, "failed", "red" if rich else None),
+            (self.verify_failed_count, "verify failed", "red" if rich else None),
+            (self.merge_conflict_count, "conflict", "yellow" if rich else None),
             (self.interrupted_count, "interrupted", "yellow" if rich else None),
             (self.pending_count, "pending", None),
         ]
