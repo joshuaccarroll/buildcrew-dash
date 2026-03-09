@@ -1737,3 +1737,85 @@ async def test_batch_phase_duration_no_log(tmp_path):
             assert "build" in phase
             # No duration appended
             assert "m" not in phase.replace("build", "")
+
+
+# ---------------------------------------------------------------------------
+# Verify phase progress display
+# ---------------------------------------------------------------------------
+
+
+def _make_verify_status(security=False, tests=False, outcome=False):
+    from buildcrew_dash.activity_reader import VerifyStatus  # noqa: PLC0415
+    return VerifyStatus(security=security, tests=tests, outcome=outcome)
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_verify_header_shows_sub_agent_status(tmp_path):
+    """Verify phase with 2/3 done shows security/tests/AC status in header."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(task_num=1, total_tasks=1, phase="verify", phase_status="running")
+    log_summary = _make_log_summary(phases=[
+        PhaseRecord(name="verify", status="active", started_at=datetime(2024, 1, 1), task_num=1),
+    ])
+    vs = _make_verify_status(security=True, tests=True, outcome=False)
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.screens.kanban.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.screens.kanban.activity_reader.read_verify_status", return_value=vs),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            await screen.refresh_data()
+            header = str(screen.query_one("#task-header", Static).content)
+            assert "security" in header
+            assert "tests" in header
+            assert "AC" in header
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_verify_phase_strip_shows_checks_done(tmp_path):
+    """Verify phase strip shows '2/3 checks done' when 2 sub-agents complete."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(task_num=1, total_tasks=1, phase="verify", phase_status="running")
+    log_summary = _make_log_summary(phases=[
+        PhaseRecord(name="verify", status="active", started_at=datetime(2024, 1, 1), task_num=1),
+    ])
+    vs = _make_verify_status(security=True, tests=True, outcome=False)
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.screens.kanban.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.screens.kanban.activity_reader.read_verify_status", return_value=vs),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            await screen.refresh_data()
+            strip = str(screen.query_one("#phase-strip", Static).content)
+            assert "2/3 checks done" in strip
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_verify_status_not_shown_for_non_verify_phase(tmp_path):
+    """Non-verify phase does not show verify sub-agent status."""
+    inst = _make_instance(str(tmp_path))
+    state = _make_state(task_num=1, total_tasks=1, phase="build", phase_status="running")
+    log_summary = _make_log_summary()
+    with (
+        patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]),
+        patch("buildcrew_dash.state_reader.read", return_value=state),
+        patch("buildcrew_dash.screens.kanban.activity_reader.read", return_value=None),
+        patch("buildcrew_dash.log_parser.parse", return_value=log_summary),
+    ):
+        async with _KanbanTestApp(inst).run_test(size=(200, 50)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            await screen.refresh_data()
+            header = str(screen.query_one("#task-header", Static).content)
+            strip = str(screen.query_one("#phase-strip", Static).content)
+            assert "checks done" not in strip
+            assert "security" not in header
