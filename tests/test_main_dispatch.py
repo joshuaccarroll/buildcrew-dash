@@ -24,7 +24,11 @@ EXACT_UPDATE_CMD = (
 
 def test_hp01_no_arg_calls_tui():
     """HP-01: No arg — BuildCrewDashApp().run() is called, sys.exit never called."""
+    mock_stdin = MagicMock()
+    mock_stdin.fileno.return_value = 0
     with patch("sys.argv", [PROG]), \
+         patch("sys.stdin", mock_stdin), \
+         patch("os.isatty", return_value=True), \
          patch("buildcrew_dash.__main__.BuildCrewDashApp") as mock_app_cls:
         mock_app = MagicMock()
         mock_app_cls.return_value = mock_app
