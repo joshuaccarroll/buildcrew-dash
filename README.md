@@ -12,6 +12,8 @@ Built with [Textual](https://textual.textualize.io/).
 - Mode column showing `auto` when running unattended
 - Subagent activity (current turn and tool call)
 - Queued backlog tasks shown as dimmed rows below the active task
+- Orphaned process detection — stale locks and detached child processes surface as 💀 rows
+- One-key cleanup of orphaned state and processes
 - Stop/cancel control per process
 
 **Kanban Screen** — detailed phase-by-phase view for a single process:
@@ -63,10 +65,17 @@ Running `buildcrew-dash` auto-discovers any running `buildcrew` processes — no
 | Index | `q` | Quit |
 | Index | `Enter` / `→` | Open kanban for selected process |
 | Index | `s` | Stop/cancel the selected workflow |
+| Index | `c` | Clean up selected orphaned process |
 | Kanban | `Esc` / `←` | Back to index |
 | Kanban | `q` | Quit |
 | Kanban | `s` | Stop/cancel the workflow |
 | Kanban | `l` | Toggle log panel |
+
+## Orphan Detection
+
+buildcrew-dash automatically detects orphaned buildcrew processes — workflows whose orchestrator crashed or was killed, leaving behind child processes and stale state files. Orphaned instances appear as 💀 rows on the index screen. Press `c` on an orphan row to clean up its detached processes and stale lock/state files.
+
+The dashboard also protects itself from becoming orphaned: if its terminal closes, it exits cleanly via SIGHUP handling, a TTY startup gate, and a periodic watchdog that detects reparenting to PID 1.
 
 ## Limitations
 
