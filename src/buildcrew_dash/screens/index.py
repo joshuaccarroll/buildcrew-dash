@@ -1,3 +1,4 @@
+import asyncio
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -8,7 +9,8 @@ from textual.widgets import DataTable, Footer, Static
 
 from buildcrew_dash.scanner import ProcessMonitor, ProcessScanner
 from buildcrew_dash import activity_reader, backlog_reader, log_parser, manifest_reader, state_reader, uat_reader
-from buildcrew_dash import stop_control
+from buildcrew_dash import orphan_detector, stop_control
+from buildcrew_dash.orphan_detector import OrphanedInstance
 from buildcrew_dash.screens.kanban import PHASE_ORDER, _format_phase_duration
 
 
@@ -17,11 +19,15 @@ class IndexScreen(Screen):
         ("right", "open", "Open"),
         ("q", "quit", "Quit"),
         ("s", "toggle_stop", "Stop/Cancel"),
+        ("c", "clean_orphan", "Clean"),
     ]
 
     def __init__(self) -> None:
         super().__init__()
         self._monitor = ProcessMonitor(ProcessScanner())
+        self._orphans: list[OrphanedInstance] = []
+        self._orphan_scan_in_progress = False
+        self._seeded = False
 
     def compose(self) -> ComposeResult:
         yield Static("", id="master-timer")
@@ -40,13 +46,17 @@ class IndexScreen(Screen):
         table.add_column("Status", key="status")
         await self.refresh_data()
         self.set_interval(1.0, self.refresh_data)
+        self.set_interval(10.0, self._trigger_orphan_scan)
 
     async def refresh_data(self) -> None:
         try:
             await self._monitor.poll()
             table = self.query_one(DataTable)
 
-            if len(self._monitor._known) == 0:
+            has_active = len(self._monitor._known) > 0
+            has_orphans = len(self._orphans) > 0
+
+            if not has_active and not has_orphans:
                 table.display = False
                 self.query_one("#master-timer", Static).update("")
                 try:
@@ -64,7 +74,9 @@ class IndexScreen(Screen):
 
                 # Build desired dict
                 desired: dict[str, tuple] = {}
+                active_project_paths: set[Path] = set()
                 for instance in self._monitor._known.values():
+                    active_project_paths.add(instance.project_path)
                     try:
                         active_key = f"{str(instance.log_path)}::active"
                         desired[active_key] = self._compute_cells(instance)
@@ -80,6 +92,22 @@ class IndexScreen(Screen):
                             if k.startswith(prefix):
                                 del desired[k]
                         continue
+
+                # Add orphan rows (dedup: skip if project_path matches active instance)
+                for orphan in self._orphans:
+                    if orphan.project_path in active_project_paths:
+                        continue
+                    orphan_key = f"orphan::{orphan.project_path}"
+                    desired[orphan_key] = (
+                        orphan.project_path.name,
+                        "\u2014",
+                        "\u2014",
+                        orphan.summary,
+                        "\u2014",
+                        "[red]\U0001f480[/red]",
+                        "\u2014",
+                        "[red]Orphaned[/red]",
+                    )
 
                 # Remove absent rows
                 for row_key in list(table.rows.keys()):
@@ -108,15 +136,64 @@ class IndexScreen(Screen):
                                 oldest = ls.start_time
                     except Exception:
                         pass
+                timer_text = ""
                 if oldest is not None:
                     elapsed = int(time.time()) - int(oldest.timestamp())
-                    self.query_one("#master-timer", Static).update(
-                        f"Elapsed: {timedelta(seconds=elapsed)}"
-                    )
-                else:
-                    self.query_one("#master-timer", Static).update("")
+                    timer_text = f"Elapsed: {timedelta(seconds=elapsed)}"
+                if has_orphans:
+                    n = len(self._orphans)
+                    orphan_text = f"{n} orphan{'s' if n != 1 else ''}"
+                    timer_text = f"{timer_text} | {orphan_text}" if timer_text else orphan_text
+                self.query_one("#master-timer", Static).update(timer_text)
         except Exception as e:
             self.notify(str(e), severity="warning")
+
+    def _trigger_orphan_scan(self) -> None:
+        if self._orphan_scan_in_progress:
+            return
+        self._orphan_scan_in_progress = True
+        asyncio.get_running_loop().create_task(self._run_orphan_scan())
+
+    async def _run_orphan_scan(self) -> None:
+        try:
+            snapshot = self._monitor.known_projects
+            if not self._seeded:
+                snapshot |= orphan_detector.seed_projects()
+                self._seeded = True
+            self._orphans = await asyncio.get_running_loop().run_in_executor(
+                None, orphan_detector.scan, snapshot
+            )
+        except Exception:
+            pass
+        finally:
+            self._orphan_scan_in_progress = False
+
+    async def action_clean_orphan(self) -> None:
+        table = self.query_one(DataTable)
+        if table.row_count == 0:
+            return
+        row_key: str = table.coordinate_to_cell_key(table.cursor_coordinate).row_key.value
+        if not row_key.startswith("orphan::"):
+            self.notify("Not an orphan row")
+            return
+        project_str = row_key[len("orphan::"):]
+        project_path = Path(project_str)
+        orphan = None
+        for o in self._orphans:
+            if o.project_path == project_path:
+                orphan = o
+                break
+        if orphan is None:
+            self.notify("Orphan no longer detected")
+            return
+        result = await asyncio.get_running_loop().run_in_executor(
+            None, orphan_detector.clean, orphan
+        )
+        if result.skipped_reason:
+            self.notify(f"Skipped: {result.skipped_reason}")
+        else:
+            self.notify(f"Cleaned: {result.killed} killed, {result.files_removed} files removed")
+        self._orphans = [o for o in self._orphans if o.project_path != project_path]
 
     def _compute_cells(self, instance) -> tuple:
         state = state_reader.read(instance.project_path / ".buildcrew" / ".workflow-state")
