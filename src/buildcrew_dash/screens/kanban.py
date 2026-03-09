@@ -320,6 +320,16 @@ class KanbanScreen(Screen):
 
             log_summary = log_parser.parse(self.instance.log_path)
 
+            # Read verify sub-agent progress when in verify phase
+            verify_status = None
+            if state is not None and state.phase == "verify":
+                phase_start = None
+                for rec in reversed(log_summary.phases):
+                    if rec.name == "verify":
+                        phase_start = rec.started_at
+                        break
+                verify_status = activity_reader.read_verify_status(self.instance.project_path, phase_start)
+
             # Update sub_title with elapsed timer
             if log_summary.start_time is not None:
                 elapsed = int(time.time()) - int(log_summary.start_time.timestamp())
@@ -336,6 +346,14 @@ class KanbanScreen(Screen):
                         header_text += (
                             f"  · Turn {activity.turn}/{activity.max_turns}"
                             f" · {activity.tool}: {activity.tool_input[:30]}"
+                        )
+                    if verify_status is not None:
+                        def _vl(done: bool) -> str:
+                            return "[green][done][/green]" if done else "[dim][--][/dim]"
+                        header_text += (
+                            f"  · security{_vl(verify_status.security)}"
+                            f" tests{_vl(verify_status.tests)}"
+                            f" AC{_vl(verify_status.outcome)}"
                         )
             else:
                 header_text = ""
@@ -386,6 +404,9 @@ class KanbanScreen(Screen):
                     label += _phase_duration_label(rec)
                 if sym in ("●", "⏸") and activity is not None and int(time.time()) - activity.timestamp < 30 and activity.turn > 0:
                     label += f" T{activity.turn}/{activity.max_turns}"
+                if sym in ("●", "⏸") and phase_label == "verify" and verify_status is not None:
+                    done_count = sum([verify_status.security, verify_status.tests, verify_status.outcome])
+                    label += f" — {done_count}/3 checks done"
                 parts.append(label)
             # Read UAT state and verdict
             uat_state = uat_reader.read_state(self.instance.project_path)

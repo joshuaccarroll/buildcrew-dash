@@ -1,10 +1,11 @@
-"""Tests for activity_reader.py — AC-01 through AC-06 plus round-trip."""
+"""Tests for activity_reader.py — AC-01 through AC-06 plus round-trip, verify status."""
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from buildcrew_dash.activity_reader import AgentActivity, read
+from buildcrew_dash.activity_reader import AgentActivity, VerifyStatus, read, read_verify_status
 
 
 # ---------------------------------------------------------------------------
@@ -24,15 +25,15 @@ def test_ac01_absent_file_returns_none():
 
 
 def test_ac02_valid_file_parses_all_fields(tmp_path):
-    """AC-02: All six keys present → correct types and values."""
+    """AC-02: Uppercase keys (as written by stream_processor) → parsed correctly via lowercasing."""
     f = tmp_path / "activity"
     f.write_text(
-        "tool=Read\n"
-        "tool_input=src/foo.py\n"
-        "turn=5\n"
-        "max_turns=50\n"
-        "status=running\n"
-        "timestamp=1700000000\n"
+        "TOOL=Read\n"
+        "TOOL_INPUT=src/foo.py\n"
+        "TURN=5\n"
+        "MAX_TURNS=50\n"
+        "STATUS=running\n"
+        "TIMESTAMP=1700000000\n"
     )
     result = read(f)
     assert result is not None
@@ -142,3 +143,77 @@ def test_round_trip(tmp_path):
     assert result.max_turns == 100
     assert result.status == "tool_use"
     assert result.timestamp == 1700001234
+
+
+# ---------------------------------------------------------------------------
+# Key casing: uppercase keys (as written by stream_processor) are lowercased
+# ---------------------------------------------------------------------------
+
+
+def test_uppercase_keys_parsed_as_lowercase(tmp_path):
+    """Uppercase keys written by stream_processor are lowercased during parsing."""
+    f = tmp_path / "activity"
+    f.write_text("TOOL=Bash\nTURN=3\nMAX_TURNS=30\nSTATUS=running\nTIMESTAMP=1700000000\n")
+    result = read(f)
+    assert result is not None
+    assert result.tool == "Bash"
+    assert result.turn == 3
+    assert result.max_turns == 30
+    assert result.status == "running"
+    assert result.timestamp == 1700000000
+
+
+# ---------------------------------------------------------------------------
+# VerifyStatus: read_verify_status()
+# ---------------------------------------------------------------------------
+
+
+def test_verify_status_no_files(tmp_path):
+    """No verify output files → all False."""
+    vs = read_verify_status(tmp_path)
+    assert vs == VerifyStatus(security=False, tests=False, outcome=False)
+
+
+def test_verify_status_all_files_present(tmp_path):
+    """All three verify output files present → all True."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "security-audit.md").write_text("audit")
+    (claude_dir / "verify-evidence.md").write_text("evidence")
+    (claude_dir / "outcome-report.md").write_text("outcome")
+    vs = read_verify_status(tmp_path)
+    assert vs == VerifyStatus(security=True, tests=True, outcome=True)
+
+
+def test_verify_status_partial_files(tmp_path):
+    """Only security file present → security=True, others=False."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "security-audit.md").write_text("audit")
+    vs = read_verify_status(tmp_path)
+    assert vs.security is True
+    assert vs.tests is False
+    assert vs.outcome is False
+
+
+def test_verify_status_stale_files_filtered(tmp_path):
+    """Files older than phase_start are treated as not current."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    f = claude_dir / "security-audit.md"
+    f.write_text("old audit")
+    # phase_start is in the future relative to the file's mtime
+    phase_start = datetime(2099, 1, 1)
+    vs = read_verify_status(tmp_path, phase_start=phase_start)
+    assert vs.security is False
+
+
+def test_verify_status_current_files_pass(tmp_path):
+    """Files newer than phase_start are treated as current."""
+    claude_dir = tmp_path / ".claude"
+    claude_dir.mkdir()
+    (claude_dir / "security-audit.md").write_text("new audit")
+    # phase_start is in the past
+    phase_start = datetime(2000, 1, 1)
+    vs = read_verify_status(tmp_path, phase_start=phase_start)
+    assert vs.security is True

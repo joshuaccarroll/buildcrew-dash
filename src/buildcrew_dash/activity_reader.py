@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 
@@ -36,7 +37,7 @@ def read(path: str | Path) -> AgentActivity | None:
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
-        data[key] = value
+        data[key.lower()] = value
 
     return AgentActivity(
         tool=data.get("tool", ""),
@@ -45,4 +46,29 @@ def read(path: str | Path) -> AgentActivity | None:
         max_turns=_safe_int(data.get("max_turns")),
         status=data.get("status", ""),
         timestamp=_safe_int(data.get("timestamp")),
+    )
+
+
+@dataclass
+class VerifyStatus:
+    security: bool = False
+    tests: bool = False
+    outcome: bool = False
+
+
+def _is_current(path: Path, phase_start: datetime | None) -> bool:
+    """Check if file exists and was written during the current phase."""
+    if not path.exists():
+        return False
+    if phase_start is None:
+        return True
+    return datetime.fromtimestamp(path.stat().st_mtime) >= phase_start
+
+
+def read_verify_status(project_path: Path, phase_start: datetime | None = None) -> VerifyStatus:
+    claude_dir = project_path / ".claude"
+    return VerifyStatus(
+        security=_is_current(claude_dir / "security-audit.md", phase_start),
+        tests=_is_current(claude_dir / "verify-evidence.md", phase_start),
+        outcome=_is_current(claude_dir / "outcome-report.md", phase_start),
     )
