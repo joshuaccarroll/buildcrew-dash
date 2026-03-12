@@ -4,6 +4,7 @@ import asyncio
 import os
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from glob import glob
 from pathlib import Path
@@ -100,6 +101,13 @@ class ProcessMonitor:
     def __init__(self, scanner: ProcessScanner) -> None:
         self._scanner = scanner
         self._known: dict[Path, BuildCrewInstance] = {}
+        self._all_known_projects: set[Path] = set()
+        self._projects_lock = threading.Lock()
+
+    @property
+    def known_projects(self) -> set[Path]:
+        with self._projects_lock:
+            return set(self._all_known_projects)
 
     async def poll(self) -> tuple[list[BuildCrewInstance], list[BuildCrewInstance]]:
         new_results: list[BuildCrewInstance] = await asyncio.get_running_loop().run_in_executor(
@@ -108,4 +116,6 @@ class ProcessMonitor:
         added = [inst for inst in new_results if inst.log_path not in self._known]
         removed = [inst for inst in self._known.values() if inst.log_path not in {i.log_path for i in new_results}]
         self._known = {inst.log_path: inst for inst in new_results}
+        with self._projects_lock:
+            self._all_known_projects |= {inst.project_path for inst in new_results}
         return (added, removed)

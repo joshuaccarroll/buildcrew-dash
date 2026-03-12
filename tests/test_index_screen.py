@@ -1399,3 +1399,108 @@ async def test_master_timer_blank_when_no_start_time():
             from textual.widgets import Static as _Static  # noqa: PLC0415
             timer = pilot.app.screen.query_one("#master-timer", _Static)
             assert str(timer.render()) == ""
+
+
+# ---------------------------------------------------------------------------
+# Orphan detection UI tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_orphan_rows_appear_with_key_prefix():
+    """Orphan rows appear in table with 'orphan::' key prefix."""
+    from buildcrew_dash.orphan_detector import OrphanedInstance  # noqa: PLC0415
+
+    orphan = OrphanedInstance(
+        project_path=Path("/tmp/stale_proj"),
+        lock_pid=99999,
+        pids_to_kill=[55555],
+        files_to_remove=[],
+        summary="Stale lock PID 99999, 1 detached proc",
+    )
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[]), \
+         patch("buildcrew_dash.screens.index.orphan_detector.seed_projects", return_value=set()), \
+         patch("buildcrew_dash.screens.index.orphan_detector.scan", return_value=[orphan]):
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            screen = pilot.app.screen
+            # Trigger orphan scan manually
+            screen._seeded = True
+            await screen._run_orphan_scan()
+            await screen.refresh_data()
+            await pilot.pause()
+
+            from textual.widgets import DataTable  # noqa: PLC0415
+            table = screen.query_one(DataTable)
+            assert table.row_count == 1
+            key_values = {rk.value for rk in table.rows.keys()}
+            assert any(k.startswith("orphan::") for k in key_values)
+            orphan_key = f"orphan::{Path('/tmp/stale_proj')}"
+            assert table.get_cell(orphan_key, "status") == "[red]Orphaned[/red]"
+            assert table.get_cell(orphan_key, "project") == "stale_proj"
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_c_keybinding_cleans_orphan(tmp_path):
+    """'c' keybinding triggers cleanup on orphan rows."""
+    from buildcrew_dash.orphan_detector import CleanResult, OrphanedInstance  # noqa: PLC0415
+
+    orphan = OrphanedInstance(
+        project_path=tmp_path,
+        lock_pid=99999,
+        pids_to_kill=[],
+        files_to_remove=[],
+        summary="Stale lock PID 99999",
+    )
+
+    clean_result = CleanResult(killed=0, files_removed=2, skipped_reason=None)
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[]), \
+         patch("buildcrew_dash.screens.index.orphan_detector.seed_projects", return_value=set()), \
+         patch("buildcrew_dash.screens.index.orphan_detector.scan", return_value=[orphan]), \
+         patch("buildcrew_dash.screens.index.orphan_detector.clean", return_value=clean_result) as mock_clean:
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            screen = pilot.app.screen
+            screen._seeded = True
+            await screen._run_orphan_scan()
+            await screen.refresh_data()
+            await pilot.pause()
+
+            from textual.widgets import DataTable  # noqa: PLC0415
+            table = screen.query_one(DataTable)
+            assert table.row_count == 1
+
+            notified = []
+            screen.notify = lambda msg, **_: notified.append(msg)
+            await screen.action_clean_orphan()
+
+            mock_clean.assert_called_once_with(orphan)
+            assert any("Cleaned" in n for n in notified)
+            assert len(screen._orphans) == 0
+
+
+@pytest.mark.anyio(backends=["asyncio"])
+async def test_c_keybinding_noop_on_active_row(tmp_path):
+    """'c' keybinding is a no-op on active/queued rows."""
+    inst = BuildCrewInstance(
+        pid=12345,
+        project_path=tmp_path,
+        log_path=tmp_path / ".buildcrew" / "logs" / "buildcrew-2024-01-01_00-00-00-12345.log",
+    )
+    state = _make_state(timestamp=int(time.time()) - 5)
+    log_summary = _make_log_summary()
+
+    with patch("buildcrew_dash.scanner.ProcessScanner.scan", return_value=[inst]), \
+         patch("buildcrew_dash.screens.index.state_reader.read", return_value=state), \
+         patch("buildcrew_dash.screens.index.log_parser.parse", return_value=log_summary), \
+         patch("buildcrew_dash.screens.index.backlog_reader.read_pending_tasks", return_value=[]), \
+         patch("buildcrew_dash.screens.index.orphan_detector.clean") as mock_clean:
+        async with BuildCrewDashApp().run_test(size=(120, 30)) as pilot:
+            await pilot.pause()
+            screen = pilot.app.screen
+            notified = []
+            screen.notify = lambda msg, **_: notified.append(msg)
+            await screen.action_clean_orphan()
+
+            mock_clean.assert_not_called()
+            assert any("Not an orphan" in n for n in notified)
